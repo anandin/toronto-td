@@ -17,6 +17,10 @@ fight on the streets you picked.
 - Shipping a new build = push a new `game.html` to `main`
   (`~/workspace/repos/push_toronto_td.py` does it in one commit via the
   GitHub Git Data API). The live page picks it up within a few minutes.
+- The stored `game.html` carries the placeholder `__MAPBOX_PUBLIC_TOKEN__`
+  where the build's Mapbox token belongs: GitHub's secret scanner cannot
+  tell the *public* token (`pk.…`) from a secret one and blocks the raw
+  file. `api/play.js` swaps the real public token back in as it serves.
 
 ## Notes
 

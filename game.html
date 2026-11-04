@@ -2576,6 +2576,7 @@ function beginDiveAt(res){
  rig.mode='diving'; rig.diveT=0;
  rig.diveFromPos.copy(camera.position); rig.diveFromQuat.copy(camera.quaternion);
  rig.streetPos.copy(anchor.point); rig.streetPos.y=0;
+ diveDbg.land='land '+Math.round(rig.streetPos.x/WORLD)+','+Math.round(-rig.streetPos.z/WORLD)+' yaw '+(rig.streetYaw||0).toFixed(2); /* Ticket-03 witness */
  rig.streetYaw=roadFacingYaw(anchor,rig.streetPos); /* Brief #9 D2: yaw from the ROAD SEGMENT direction, signed toward the incoming column — survivor and camera share it, so the camera sits on the same centreline behind him and the first frame is road + his back + the street ahead BY CONSTRUCTION. No ray is scored. The clear-ray below is kept only as the dev panel's "los log". */
  rig._diveScored={clear:clearRayDistance(rig.streetPos,rig.streetYaw,camSpawnFor(rig.streetPos,rig.streetYaw)),kind:'road',cands:[]};
  updateStreetLocChip();

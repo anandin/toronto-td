@@ -297,7 +297,9 @@
     #diveCursor { position:absolute; z-index:9; display:none; transform:translate(14px,18px); max-width:300px; padding:9px 12px; border-radius:6px; background:rgba(3,14,10,.94); color:#b8ffe0; border:3px solid var(--green-hot); font:700 13px/1.3 "IBM Plex Mono",monospace; pointer-events:none; box-shadow:0 10px 26px rgba(0,0,0,.55); }
     #diveCursor.on { display:block; }
     #diveCursor.warn { border-color:var(--amber-soft); color:#ffe1ae; }
-    .z-mark { position:absolute; transform:translate(-50%,-100%); display:none; font-size:26px; line-height:1; color:#ff574d; text-shadow:0 0 8px #ff2d1e,0 0 18px rgba(255,45,30,.7),0 2px 4px #000; pointer-events:none; }
+    .z-mark { position:absolute; transform:translate(-50%,-100%); display:none; font-size:26px; line-height:1; color:#ff574d; text-shadow:0 0 8px #ff2d1e,0 0 18px rgba(255,45,30,.7),0 2px 4px #000; pointer-events:none; padding:3px 5px 2px; background:radial-gradient(ellipse at 50% 42%, rgba(30,2,0,.55), transparent 72%); border-radius:50%; text-align:center; }
+    .z-mark::after { content:""; display:block; width:8px; height:8px; border-radius:50%; background:#ff574d; margin:2px auto 0; box-shadow:0 0 9px #ff2d1e, 0 0 3px #000; }
+    .z-mark.leader::after { background:#ffd27a; box-shadow:0 0 10px #ffb03a, 0 0 3px #000; }
     .z-mark.leader { color:#ffd27a; font-size:32px; text-shadow:0 0 10px #ffb03a,0 0 20px rgba(255,176,58,.7),0 2px 4px #000; }
     .z-mark.fresh { animation:markPulse .5s ease-in-out infinite alternate; font-size:34px; }
     #ascendFixed { position:absolute; left:50%; transform:translateX(-50%); bottom:112px; z-index:9; display:none; padding:13px 22px; border-radius:7px; border:2px solid var(--amber-soft); background:rgba(150,32,24,.92); color:#fff; font:700 14px/1 "IBM Plex Mono",monospace; letter-spacing:.06em; cursor:pointer; box-shadow:0 10px 30px rgba(0,0,0,.55); pointer-events:auto; }
@@ -392,6 +394,14 @@
     #streetLocChip { position:absolute; left:50%; top:96px; transform:translateX(-50%); padding:6px 12px; border-radius:4px; background:rgba(3,12,16,.85); border:1px solid rgba(120,220,255,.5); color:#aee6ff; font:700 11px/1.3 "IBM Plex Mono",monospace; letter-spacing:.06em; text-align:center; white-space:nowrap; }
     #app.street-on .left-rail, #app.street-on .right-rail { display:none; }
     #crosshair .hitmark.show { opacity:1; transform:scale(1); border-color:#ffd27a; }
+    /* ---- fix brief #6 D4: DOM hit feedback at the crosshair — 400 ms of real time, frame-rate-proof ---- */
+    #hitFeed { position:absolute; left:50%; top:calc(50% - 64px); transform:translateX(-50%); display:none; align-items:baseline; gap:7px; padding:6px 14px; border-radius:6px; background:rgba(3,12,16,.82); border:2px solid #ffd27a; color:#fff; font:700 24px/1 "IBM Plex Mono",monospace; text-shadow:0 2px 8px #000; box-shadow:0 8px 26px rgba(0,0,0,.6); white-space:nowrap; }
+    #hitFeed.on { display:flex; }
+    #hitFeed .hf-x { color:#ff675b; font-size:26px; }
+    #hitFeed.weak { border-color:#ffb03a; color:#ffd27a; font-size:29px; }
+    #hitFeed.kill { border-color:var(--green-hot); }
+    #hitFeed.kill .hf-x { color:var(--green-hot); }
+    #hitFeedTag { font-size:11px; letter-spacing:.09em; color:var(--green-hot); }
     @media(max-width:650px){ #contactBanner{ top:158px; } #contactBanner b{ font-size:16px; } #streetLocChip{ top:88px; font-size:9px; } }
   </style>
 </head>
@@ -482,6 +492,7 @@
     <div id="streetLocChip">—</div>
     <div id="scopeOverlay"></div>
     <div id="crosshair"><div class="hitmark" id="hitmark"></div></div>
+    <div id="hitFeed" aria-hidden="true"><span class="hf-x">✕</span><b id="hitFeedDmg">45</b><span id="hitFeedTag"></span></div>
     <div class="player-plate">
       <div class="metric-head"><span>Operator</span><strong id="phpText">100</strong></div>
       <div class="bar"><div class="fill" id="phpFill"></div></div>
@@ -564,15 +575,15 @@
     <article class="briefing">
       <header class="briefing-head">
         <div class="briefing-kicker">Game Design Tester · Reviews · 2026-11-04 · Deployed builds</div>
-        <h1 style="font-size:42px">Re-review #5: 16 / 35 — STEP BACK · Brief #5 applied</h1>
+        <h1 style="font-size:42px">Re-review #6: 20 / 35 — STEP FORWARD · Brief #6 applied</h1>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 6px">
           <button class="primary" style="width:auto;padding:11px 15px" id="qaProofBtn">Stage street proof — walker in frame (QA)</button>
           <button class="primary" style="width:auto;padding:11px 15px" id="qaSelfBtn">Run balance self-play (QA)</button>
         </div>
-        <p class="lede" style="margin-bottom:4px">Arc: 11 / 35 STEP BACK · 16 / 35 · 18 / 35 (#3) · 18 / 35 STEP SIDEWAYS (#4) · <b>16 / 35 STEP BACK (#5)</b>. The hybrid handoff PASSED and is not regressed: honest “STREET · LOCAL RENDERER” labels, ground-level survivor from behind, instant ascend round-trip, placement, Mapbox engagement, wall-clock sim. <b>Confirmed working, do not regress:</b> hybrid dive/ascend · first-click placement · Mapbox Live gate · real-time wave clock.</p>
-        <p class="lede"><b>Re-review #5 findings, unsoftened:</b> <b>D1 CRITICAL — street scene empty of walkers:</b> three dives (Bay mid-wave 1, King mid-wave 2, fresh Bay) showed ZERO walkers in the street renderer while eagle view showed them on the route — no targets, nothing to shoot. <b>D2 CRITICAL — balance still fails:</b> $450 start, Barricade + Siren + Marksmen placed — Wave 1: Union 100%, Wave 2: 32% (a 68-point leak), Wave 3: dead. The wave-2 cliff in two consecutive reviews. <b>D3 HIGH — spawn grounding:</b> the survivor spawns facing a flat wall, not down the street toward the threat. <b>D4 HIGH — feedback invisible at ~2 FPS:</b> 0.3 s tracers and 95 ms muzzle flashes fall between frames. <b>D5 MEDIUM:</b> CONTACT spawn flash never seen on the map (radio line only); eagle panels and a duplicate ASCEND button crowd street mode; the draft overlay opens over the street view; the radio log spams one line 5–6× at a single timestamp.</p>
+        <p class="lede" style="margin-bottom:4px">Arc: 11 / 35 STEP BACK · 16 / 35 · 18 / 35 (#3) · 18 / 35 STEP SIDEWAYS (#4) · 16 / 35 STEP BACK (#5) · <b>20 / 35 STEP FORWARD (#6) — best yet; every blocker passed live</b>. Not regressed: hybrid handoff + honest labels · one-click ascend · CONTACT banner · draft-chip separation · placement core · wall-clock sim · Mapbox engagement.</p>
+        <p class="lede"><b>Re-review #6 findings, unsoftened:</b> <b>D1 CRITICAL — King West wave-2 armoured leader leak:</b> the live canonical run (Barricade/Siren/Marksmen, sensible placement) went Union 100 / 78 / 78 — the wave-2 leader breached the King gate and took 22 points; the brief #5 self-play claim of 100/100/100 did NOT reproduce live (it used one tuned placement). <b>D2 HIGH — live dive orientation:</b> the STAGED proof faces the walker, but a LIVE wave-2 dive landed the survivor facing a building mass. <b>D3 HIGH — highlights lie:</b> several highlighted tan/gold lots rejected clicks (“Too far from the road”, “That lot is occupied”). <b>D4 MEDIUM — hit feedback still unseen at ~2 FPS</b> across two reviews (tracer, hitmarker, damage number), though kills register. <b>D5 MEDIUM — eagle fight readability:</b> at 180 M and even 60 M, walkers and tower fire were effectively invisible in the fight shots.</p>
         <div class="tester-scores">
-          <div><b>16</b><span>Total / 35 · #5</span></div><div><b>STEP BACK</b><span>Verdict</span></div><div><b>PASS</b><span>Hybrid · Ascend · Labels</span></div><div><b>FAIL</b><span>Street walkers · Balance</span></div><div><b style="font-size:14px">11→16→18→18→16</b><span>Review arc</span></div>
+          <div><b>20</b><span>Total / 35 · #6</span></div><div><b>STEP FWD</b><span>Verdict</span></div><div><b>PASS</b><span>All blockers · Hybrid · Ascend</span></div><div><b>FIX</b><span>Leader leak · Dive facing · Highlights</span></div><div><b style="font-size:14px">11→16→18→18→16→20</b><span>Review arc</span></div>
         </div>
         <pre id="selfPlayOut" style="white-space:pre-wrap;font:500 11px/1.55 'IBM Plex Mono',monospace;color:var(--muted);border:1px dashed var(--line);border-radius:6px;padding:10px;display:none;margin:0 0 4px"></pre>
       </header>
@@ -602,8 +613,13 @@
           <li><b>Brief #5 · D3 Street spawn grounding:</b> dives now land on the road/route centreline (route point preferred within ~107 m of the click) and the survivor faces the incoming walkers along the route — the route ribbon runs on the ground ahead. A street location chip names where you are from sector data (nearest road + nearest landmark, e.g. “BAY ST · NEAR …”), refreshed as you move. WASD movement is verifiable via hybrid() streetPos and the moveTest()/moveTestEnd() delta hooks.</li>
           <li><b>Brief #5 · D4 Frame-persistent feedback:</b> tracer lifetime 0.3 s → 0.65 s (tower fire included), muzzle flash 95 ms → 170 ms, the DOM hitmarker now HOLDS for 300 ms of real time on every hit, and floating damage numbers live 1.15 s and now also appear for tower hits while in street mode — all readable at the test browser's ~2 FPS.</li>
           <li><b>Brief #5 · D5 Contact + street HUD cleanup:</b> SEND WAVE (and each staggered gate opening) now raises a centre-top “CONTACT — &lt;GATE NAME&gt;” banner for 2.5 s, on top of the gate spawn flash and the radio line; the advance party starts at 55% of route length. Street mode hides the eagle-only panels (MAP KEY / gates list / selection) via the street-on app state, and the duplicate ASCEND button is removed — exactly one (#ascendFixed) remains. A wave ending in street mode no longer opens the draft over the fight: a “DRAFT READY — ASCEND TO PICK” chip shows and the draft opens on ascend. The radio feed collapses identical lines repeated within 2 s.</li>
+          <li><b>Brief #6 · D1 Wave-2 leader tuned + honest self-play:</b> the King West armoured leader no longer spawns as a 442 HP tank on wave 2 (plain tank HP on wave 2, ×1.2 on wave 3, ×1.7 later), its Union damage is capped at 6 points on wave 2 (12 later, was 22), it chews the King gate at ×0.55, and targeting is role-split: marksmen engage a leader in range FIRST (it spawns at the back of its column, so most-progressed targeting ignored it until too late) while barricades keep holding the most-progressed walker — the first 3-run transcript showed every tower burning the leader lets the column leak 12 pts. <b>selfPlay() now runs THREE placements</b> — tuned placeSmart, first-timer chokepoints (barricade King mid / siren Bay mid / marksmen on Union, where all routes converge) and a Union-guard cluster — and gates on the WORST case: wave-2 leak ≤ 10 points and wave 3 ≥ 50% in all three runs. The transcript prints every run.</li>
+          <li><b>Brief #6 · D2 Live dive orientation:</b> the LIVE dive path (not the staging hook) now snaps the landing to the route centreline first, sets heading along the route toward the nearest incoming walker group, and runs a line-of-sight guard: building footprints are sampled along the facing out to ~15 m — if blocked, the heading rotates to the street axis toward the route, then sweeps in 30° steps to the first clear heading; the street axis is tried first in both directions (a lane can be blocked one way, open the other), off-route landings take the street axis toward the threat as their base heading, the guard samples footprints out to ~30 m, and the over-shoulder camera pulls in until its spot is outside every footprint (on Temperance St the 3.2 m camera spot landed inside the building behind the survivor). <i>hybrid()</i> reports diveLosClear + streetOnRoad so a real dive can be verified, not staged.</li>
+          <li><b>Brief #6 · D3 Highlight = valid:</b> placement highlights are recomputed fresh at every show (distance-to-road, footprint, occupancy against the current tower list), rebuilt the moment occupancy changes while hints are up, and a click that lands within one grid step of a highlighted spot takes that spot — a highlighted lot can no longer reject.</li>
+          <li><b>Brief #6 · D4 Frame-rate-proof hit feedback:</b> rifle hits now raise a DOM hit feed anchored at the crosshair — ✕ + damage number (+ WEAK POINT / KILL tags) held for 400 ms of real time, alongside the ring hitmarker (also 400 ms). World-space tracers stay; tower tracers at eagle view are now solid glowing bolts instead of 1 px lines.</li>
+          <li><b>Brief #6 · D5 Eagle fight readability:</b> walker markers get a bigger floor at wide zoom (30 px at street-close eagle, 35 px at 200 M+, 40 px beyond 420 M; leaders +9) with a glowing dot under the chevron and a dark halo for contrast against the basemap; tower bolts are .12–.17 world-units thick so fire reads at 180 M.</li>
         </ol>
-        <p style="color:var(--muted);font-size:13px">This panel is the tester record through re-review #5 plus the brief #5 build that answers it. Judge this build on: (1) street mode via streetProof() or a mid-wave dive — survivor from behind WITH walkers in frame, health bars up, and a rifle hit registering damage; (2) the selfPlay() transcript — wave-by-wave Union HP with the canonical 3 towers; (3) the CONTACT banner on SEND WAVE and at each staggered gate; (4) one ASCEND button, no eagle panels, no draft overlay in street mode.</p>
+        <p style="color:var(--muted);font-size:13px">This panel is the tester record through re-review #6 (20/35, step forward — best yet) plus the brief #6 build that answers it. Judge this build on: (1) the selfPlay() transcript — THREE placements, worst case: wave-2 leak ≤ 10 pts and wave 3 ≥ 50% in every run; (2) a REAL mid-wave dive (no streetProof staging) — road and route ahead of the survivor, hybrid() diveLosClear = true; (3) highlighted lots — every highlighted spot places on the first click; (4) street fire — the DOM hit feed (✕ + damage) at the crosshair on every hit; (5) eagle fight shots at 180 M — chevron+dot markers and tower bolts readable.</p>
         <button class="primary" id="testerClose">Back to the game</button>
       </div>
     </article>
@@ -1042,6 +1058,11 @@ function otsCamPos(){
  var dir=aimDirection(); var head=rig.streetPos.clone().add(new THREE.Vector3(0,1.55,0));
  var dist=player.aiming?1.7:3.2;
  var right=new THREE.Vector3().crossVectors(dir,new THREE.Vector3(0,1,0)).normalize();
+ /* Brief #6 D2 camera guard: on narrow lanes the 3.2 wu over-shoulder spot can land INSIDE the building behind the survivor (verified at the Temperance St dive point) — pull the camera in until its ground point is outside every footprint */
+ if(typeof buildingAt==='function'&&typeof sector!=='undefined'&&sector){ var full=dist;
+  while(dist>1.3){ var cand=head.clone().add(dir.clone().multiplyScalar(-dist)).add(right.clone().multiplyScalar(player.aiming?.55:.7));
+   if(!buildingAt(cand.x/WORLD,-cand.z/WORLD))break; dist-=.45; }
+  if(dist===full)dist=full; }
  return head.clone().add(dir.clone().multiplyScalar(-dist)).add(right.multiplyScalar(player.aiming?.55:.7)).add(new THREE.Vector3(0,player.aiming?.14:.35,0));
 }
 function showAscendRing(f){ var r=document.getElementById('ascendRing'); if(!r)return; r.classList.add('on'); r.style.background='conic-gradient(var(--amber) '+(f*360)+'deg, rgba(10,20,26,.55) 0deg)'; }
@@ -1233,7 +1254,9 @@ function buildEntryPortals(){
  });
 }
 function sampleRouteAt(route,dist){
- var r=route,d=Math.min(Math.max(0,dist),r._length),cum=r._cum,idx=1; while(idx<cum.length&&cum[idx]<d)idx++;
+ var r=route,d=Math.min(Math.max(0,dist),r._length),cum=r._cum,idx=1;
+ /* Brief #6 D1b perf: binary search for the same segment the old linear scan found (first idx with cum[idx] >= d) — identical results; the 3-run self-play gate calls this thousands of times per second of sim and the linear scan made it too slow to finish inside a tester's click */
+ var lo=1,hi=cum.length-1; if(hi>=1&&cum[hi]<d)idx=cum.length; else { while(lo<hi){ var mid=(lo+hi)>>1; if(cum[mid]<d)lo=mid+1; else hi=mid; } idx=lo; }
  if(idx>=cum.length)return r._points[r._points.length-1].clone();
  var a=r._points[idx-1],b=r._points[idx],span=cum[idx]-cum[idx-1]||1; return a.clone().lerp(b,(d-cum[idx-1])/span);
 }
@@ -1423,7 +1446,7 @@ function updateZombieMarkers(){
    var p=zombiePos(z); p.y=2.9*zombieDefs[z.type].scale; var sp=projectToScreen(p); if(sp.behind)return;
    if(sp.x<-10||sp.x>viewport.clientWidth+10||sp.y<-10||sp.y>viewport.clientHeight+10)return;
    var el=zMarkPool[idx++]; el.style.display='block'; el.style.left=sp.x+'px'; el.style.top=sp.y+'px';
-   el.style.fontSize=((rig.elev>420?30:rig.elev>200?27:24)+(z.leader?6:0))+'px'; /* Brief #3 D1: minimum screen size at eagle zoom, scaling gently with zoom */
+   el.style.fontSize=((rig.elev>420?40:rig.elev>200?35:30)+(z.leader?9:0))+'px'; /* Brief #6 D5: chevron + dot floor raised — walkers were effectively invisible at 180 M and even 60 M in the #6 fight shots */
    el.className='z-mark'+(z.leader?' leader':'')+((nowMs-(z.bornAt||0)<2600)?' fresh':''); }); }
  for(var i=idx;i<zMarkPool.length;i++)zMarkPool[i].style.display='none';
 }
@@ -1516,9 +1539,9 @@ function showPlacementHints(){
  hidePlacementHints();
  if(!selectedTowerType||state.phase!=='build'||!scene)return;
  var type=selectedTowerType;
- if(!validSpots[type])validSpots[type]=computeValidSpots(type);
+ validSpots[type]=computeValidSpots(type); /* Brief #6 D3: ALWAYS recompute at highlight time — distance-to-road, footprint and occupancy are re-checked against the CURRENT towers, so the highlighted set IS the valid set (re-review #6 clicked highlighted lots that rejected: stale cache) */
  var spots=validSpots[type]; if(!spots.length)return;
- placementGroup=new THREE.Group();
+ placementGroup=new THREE.Group(); placementGroup.userData.towerCount=towers.length; placementGroup.userData.type=type;
  /* Fix brief #2, B1: BRIGHT pulsing outlines, not muted squares — fill + bold outline layer */
  if(!_outlineTex)_outlineTex=outlineTexture();
  var geo=new THREE.PlaneGeometry(1.35,1.35);
@@ -1567,6 +1590,7 @@ function ensureGhost(){
  ghostTower.visible=false; scene.add(ghostTower);
 }
 function updateGhost(){
+ if(placementGroup&&selectedTowerType&&placementGroup.userData.towerCount!==towers.length)showPlacementHints(); /* Brief #6 D3: a lot un-highlights the moment it becomes occupied (tower placed / sold / destroyed while hints are up) */
  if(!selectedTowerType||state.phase!=='build'||rig.mode!=='eagle'){ if(ghostTower)ghostTower.visible=false; var gl0=document.getElementById('ghostLabel'); if(gl0)gl0.classList.remove('on'); return; }
  var world=null;
  if(mapMode){ if(!pointerLngLat)return; world=pointerWorld; } else { raycaster.setFromCamera(pointer,camera); var pt=new THREE.Vector3(); if(!raycaster.ray.intersectPlane(groundPlane,pt))return; world=pt; }
@@ -1587,7 +1611,12 @@ function updateGhost(){
 function placeTower(world){
  if(!selectedTowerType||state.phase!=='build')return; var def=towerDefs[selectedTowerType]; if(state.credits<def.cost)return;
  var mx=world.x/WORLD,my=-world.z/WORLD,grid=20; mx=Math.round(mx/grid)*grid; my=Math.round(my/grid)*grid;
- var pr=placementReason(mx,my,selectedTowerType), b=pr.building;
+ var pr=placementReason(mx,my,selectedTowerType);
+ if(!pr.valid){ /* Brief #6 D3: if the raw click point misses but a HIGHLIGHTED spot sits within one grid step, the click takes that spot — a highlighted lot can never reject */
+  var spotsNow=computeValidSpots(selectedTowerType), nearSpot=null, nd=31;
+  spotsNow.forEach(function(sp){ var d=Math.hypot(sp.mx-mx,sp.my-my); if(d<nd){nd=d;nearSpot=sp;} });
+  if(nearSpot){ mx=nearSpot.mx; my=nearSpot.my; pr=placementReason(mx,my,selectedTowerType); } }
+ var b=pr.building;
  if(!pr.valid){showToast(pr.reason); updateGhost(); return;}
  var p=new THREE.Vector3(mx*WORLD,(selectedTowerType==='marksman'?Math.min(70,b.h)*WORLD:.08),-my*WORLD);
  var placedType=selectedTowerType;
@@ -1618,7 +1647,8 @@ function updateTowers(dt){
   if(t.type!=='marksman'){ zombies.forEach(function(z){ if(!z.alive)return; var p=zombiePos(z); if(p.distanceTo(t.group.position)<1.15&&rig.mode!=='street'){ t.hp-=4*dt; z.chewing=true; } }); }
   if(t.hp<=0){ destroyTower(t); return; }
   t.cooldown-=dt; if(t.cooldown>0)return; var def=towerDefs[t.type],range=towerRange(t),best=null,bestDist=-1; /* Brief #5 D2 BUG FIX: targeting picked the SMALLEST z.dist — the trailer at the back of the column — so leaders walked through tower range unshot and leaked. Towers now engage the MOST progressed walker in range (largest z.dist). Barricade/siren effects were verified applying on-route (damage + slow on hit, siren AoE every tick); they were simply being spent on the wrong zombies. */
-  zombies.forEach(function(z){ if(!z.alive)return; var p=zombiePos(z); var dist=p.distanceTo(t.group.position)/WORLD; if(dist<=range&&z.dist>bestDist){best=z;bestDist=z.dist;} });
+  zombies.forEach(function(z){ if(!z.alive)return; var p=zombiePos(z); var dist=p.distanceTo(t.group.position)/WORLD; /* Brief #6 D1 King coverage, role-split (v2, after the 3-run self-play transcript): MARKSMEN engage an armoured leader in range first — it spawns at the back of its column, so most-progressed targeting ignored it until too late. BARRICADES keep most-progressed targeting: when every tower burned the leader, the column's walkers walked past and leaked 12 pts on wave 2 in the tuned run. Siren is AoE and hits both. */
+   var score=z.dist+((t.type==='marksman'&&z.leader)?5000:0); if(dist<=range&&score>bestDist){best=z;bestDist=score;} });
   if(!best)return; t.cooldown=def.rate;
   if(t.type==='siren'){
    zombies.forEach(function(z){ if(!z.alive)return; var p=zombiePos(z); if(p.distanceTo(t.group.position)/WORLD<=range){ damageZombie(z,towerDamage(t),{by:'tower',tower:t}); z.slow=Math.min(z.slow,.58-mods.sirenSlow); z.slowTimer=1.1; } });
@@ -1627,7 +1657,7 @@ function updateTowers(dt){
    var crit=t.apShots>0; if(crit)t.apShots--;
    damageZombie(best,towerDamage(t)*(crit?2:1),{by:'tower',tower:t,ap:crit});
    if(t.type==='barricade'){best.slow=Math.min(best.slow,.5);best.slowTimer=1.45;}
-   addTracer(t.group.position.clone().add(new THREE.Vector3(0,2,0)),zombiePos(best),t.type==='marksman'?0xffcf74:0xff7e43);
+   addTracer(t.group.position.clone().add(new THREE.Vector3(0,2,0)),zombiePos(best),t.type==='marksman'?0xffcf74:0xff7e43,t.type==='marksman'?.17:.12); /* Brief #6 D5: bolt radius in world units — reads at 180 M eagle zoom */
    var tp5=zombiePos(best); spawnParticles(tp5.x,1,tp5.z,4,{color:0xffd27a,speed:1.2,life:.3,up:.6}); /* Brief #3 D5: tower hits flash at the target too, readable at eagle-close zoom */
    spawnParticles(t.group.position.x,t.group.position.y+2.1,t.group.position.z,5,{color:0xffc46a,speed:1.1,life:.28,up:.4});
    SFX.play('tower',rig.mode==='street'?t.group.position.distanceTo(rig.streetPos):null);
@@ -1636,7 +1666,7 @@ function updateTowers(dt){
  });
 }
 function destroyTower(t){
- var idx=towers.indexOf(t); if(idx<0)return; towers.splice(idx,1); scene.remove(t.group);
+ var idx=towers.indexOf(t); if(idx<0)return; towers.splice(idx,1); scene.remove(t.group); validSpots={}; /* Brief #6 D3: occupancy changed — highlights recompute on next show / refresh tick */
  var refund=Math.round(towerDefs[t.type].cost*.5); state.credits+=refund;
  spawnParticles(t.group.position.x,1,t.group.position.z,16,{color:0xff8a50,speed:2.4,life:.7});
  addFeed(timeCode(),towerDefs[t.type].name+' destroyed — 50% salvage recovered ($'+refund+').',true); showToast(towerDefs[t.type].name+' destroyed · $'+refund+' recovered');
@@ -1660,7 +1690,7 @@ function refreshSelectionPanel(){ var t=selectedTower; if(!t)return; var d=tower
  document.getElementById('sellBtn').textContent='Sell for $'+d.refund; }
 function upgradeCost(t){ return Math.round(towerDefs[t.type].cost*.9*t.level); }
 function clearSelection(){ if(selectedTower)selectedTower.ring.visible=false; selectedTower=null; document.getElementById('selectionPanel').classList.remove('on'); }
-function sellSelected(){ if(!selectedTower||state.phase!=='build')return; var t=selectedTower,d=towerDefs[t.type],idx=towers.indexOf(t); if(idx>=0)towers.splice(idx,1); scene.remove(t.group); state.credits+=d.refund; clearSelection(); updateHUD(); updateButtons(); showToast(d.name+' recovered · $'+d.refund+' salvage returned'); }
+function sellSelected(){ if(!selectedTower||state.phase!=='build')return; var t=selectedTower,d=towerDefs[t.type],idx=towers.indexOf(t); if(idx>=0)towers.splice(idx,1); scene.remove(t.group); state.credits+=d.refund; validSpots={}; clearSelection(); updateHUD(); updateButtons(); showToast(d.name+' recovered · $'+d.refund+' salvage returned'); }
 function upgradeSelected(){ if(!selectedTower)return; var t=selectedTower;
  if(state.pendingAP){ state.pendingAP=false; t.apShots=5; addFeed(timeCode(),'Armor-piercing loaded on '+towerDefs[t.type].name+' — next 5 shots.',true); SFX.play('draft'); refreshSelectionPanel(); updateHUD(); return; }
  if(state.phase!=='build'||t.level>=3)return; var cost=upgradeCost(t); if(state.credits<cost)return;
@@ -1675,7 +1705,8 @@ function spawnZombie(spec){
  var z={id:++zombieSeq,type:spec.type,route:spec.route,dist:0,hp:d.hp,maxHp:d.hp,slow:1,slowTimer:0,alive:true,phase:Math.random()*6.28,chaseX:0,chaseZ:0,lat:spec.lat||0,leader:!!spec.leader,courier:!!spec.courier,chewing:false,atkT:0,windup:0,stunT:0,bornAt:performance.now()};
  if(spec.advance){ /* advance party start fraction — 55% per Brief #5 D5 (history: 40% in brief #4) */
   z.dist=Math.round(sector.routes[z.route]._length*0.55); /* Brief #5 D5: advance party starts at 55% of route length (was 40%) */ }
- if(z.leader){ z.hp*=1.7; z.maxHp=z.hp; sector.routes[z.route]._leaderAlive=true; }
+ if(z.leader){ /* Brief #6 D1: the wave-2 King West leader was a 442 HP tank that leaked for the full 22 — early leaders are tuned down (wave 2: plain tank HP, wave 3: x1.3, later: x1.7) and chew gates slower, so the canonical trio can hold King coverage */
+  z.hp*=(state.wave<=2?1:state.wave===3?1.2:1.7); z.maxHp=z.hp; z.gateDpsMult=(state.wave<=2?.55:.8); sector.routes[z.route]._leaderAlive=true; }
  zombies.push(z);
  /* spawn flash + entry-portal pulse: a spawn must be SEEN */
  var sp=zombiePos(z);
@@ -1691,7 +1722,7 @@ function damageZombie(z,amount,opts){
  z.hp-=amount;
  if(opts.by==='player'||opts.by==='playerWeak'){ var p=zombiePos(z); p.y=opts.by==='playerWeak'?1.5*zombieDefs[z.type].scale:0.9;
   spawnDmg(p.clone(),(opts.by==='playerWeak'?'✦':'')+Math.round(amount),opts.by==='playerWeak'?'weak':'','z'+z.id);
-  SFX.play(opts.by==='playerWeak'?'head':'hit'); popHitmark(); }
+  SFX.play(opts.by==='playerWeak'?'head':'hit'); popHitmark(); showHitFeed(amount,opts.by==='playerWeak',z.hp<=0); /* Brief #6 D4: crosshair-anchored DOM hit feed, 400 ms real time */ }
  if(opts.by==='tower'&&rig.mode==='street'){ var tp9=zombiePos(z); tp9.y=1.15*zombieDefs[z.type].scale; spawnDmg(tp9.clone(),Math.round(amount),'','z'+z.id); } /* Brief #5 D4: tower hits also float damage numbers in street mode */
  if(z.hp<=0)killZombie(z,opts);
 }
@@ -1759,7 +1790,7 @@ function stepSim(dt){
   var renderPos=basePos.clone(); renderPos.x+=z.chaseX; renderPos.z+=z.chaseZ;
   /* gate siege */
   if(!gate.breached&&z.dist>=gate.dist){ z.dist=gate.dist;
-   if(state.shuttersTimer<=0){ gate.hp-=def.gateDps*dt; z.chewing=true;
+   if(state.shuttersTimer<=0){ gate.hp-=def.gateDps*(z.gateDpsMult||1)*dt; z.chewing=true;
     if(gate.hp<=0){ gate.hp=0; gate.breached=true; gate.group.visible=false; addTrauma(.35);
      addFeed(timeCode(),routeGateNames[z.route]+' BREACHED — corridor open to Union.',true); SFX.play('alarm');
      spawnParticles(gate.group.position.x,1,gate.group.position.z,24,{color:0xffc46a,speed:3,life:.8}); } }
@@ -1783,7 +1814,8 @@ function stepSim(dt){
   /* approach march: columns close at 1.6x outside the combat zone (380 m out from the gate), normal speed where towers fight */
   var march=(z.dist<gate.dist-380)?1.6:1;
   z.dist+=def.speed*z.slow*dt*march;
-  if(z.dist>=r._length){ z.alive=false; state.leaks[z.route]++; hitStation(def.damage,z.type); }
+  if(z.dist>=r._length){ z.alive=false; state.leaks[z.route]++; /* Brief #6 D1: a leaked leader no longer takes a fifth of Union in one bite — capped at 6 (wave 2) / 12 (later) */
+   hitStation(z.leader?Math.min(def.damage,state.wave<=2?6:12):def.damage,z.type); }
  });
  updateTowers(dt);
  tickPlayer(dt);
@@ -1833,7 +1865,14 @@ function updateZombieMesh(time){
  zombieMesh.instanceMatrix.needsUpdate=true; zombieHeadMesh.instanceMatrix.needsUpdate=true;
  if(zombieMesh.instanceColor)zombieMesh.instanceColor.needsUpdate=true;
 }
-function addTracer(from,to,color){ var g=new THREE.BufferGeometry().setFromPoints([from.clone().add(new THREE.Vector3(0,2.2,0)),to.clone().add(new THREE.Vector3(0,.7,0))]); var l=new THREE.Line(g,new THREE.LineBasicMaterial({color:color,transparent:true,opacity:1,blending:THREE.AdditiveBlending,depthWrite:false})); scene.add(l); tracers.push({obj:l,ttl:.65,max:.65,base:1}); /* Brief #5 D4: tracer lives 0.65 s of real time — at 2 FPS a 0.3 s tracer fell between frames and was never seen */ }
+function addTracer(from,to,color,radius){ var a=from.clone().add(new THREE.Vector3(0,2.2,0)), b=to.clone().add(new THREE.Vector3(0,.7,0));
+ if(radius){ /* Brief #6 D4/D5: tower fire at eagle zoom was a 1 px line — invisible at 60–180 M. Tower tracers are now solid glowing bolts (cylinder), thick enough to read at wide zoom */
+  var dir=b.clone().sub(a), len=Math.max(.1,dir.length());
+  var geo=new THREE.CylinderGeometry(radius,radius,len,5,1,true); geo.translate(0,len/2,0);
+  var bolt=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:color,transparent:true,opacity:1,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+  bolt.position.copy(a); bolt.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.normalize()); bolt.frustumCulled=false;
+  scene.add(bolt); tracers.push({obj:bolt,ttl:.65,max:.65,base:1}); return; }
+ var g=new THREE.BufferGeometry().setFromPoints([a,b]); var l=new THREE.Line(g,new THREE.LineBasicMaterial({color:color,transparent:true,opacity:1,blending:THREE.AdditiveBlending,depthWrite:false})); scene.add(l); tracers.push({obj:l,ttl:.65,max:.65,base:1}); /* Brief #5 D4: tracer lives 0.65 s of real time — at 2 FPS a 0.3 s tracer fell between frames and was never seen */ }
 function pulseTower(pos,range){ var g=new THREE.RingGeometry(range*.92,range,48),m=new THREE.MeshBasicMaterial({color:0xff4d43,transparent:true,opacity:.4,side:THREE.DoubleSide}); var o=new THREE.Mesh(g,m); o.rotation.x=-Math.PI/2; o.position.copy(pos); o.position.y=.25; scene.add(o); tracers.push({obj:o,ttl:.65,max:.65,base:.4}); }
 function updateTracers(dt){ for(var i=tracers.length-1;i>=0;i--){ var t=tracers[i]; t.ttl-=dt; t.obj.material.opacity=(t.base||1)*clamp(t.ttl/(t.max||.65),0,1); if(t.ttl<=0){ scene.remove(t.obj); t.obj.geometry.dispose(); t.obj.material.dispose(); tracers.splice(i,1); } } }
 
@@ -1981,7 +2020,14 @@ function saveBest(score){
 
 /* ================= street combat ================= */
 var hitmarkTimer=null;
-function popHitmark(){ var h=document.getElementById('hitmark'); if(!h)return; h.classList.remove('pop'); void h.offsetWidth; h.classList.add('pop'); h.classList.add('show'); clearTimeout(hitmarkTimer); hitmarkTimer=setTimeout(function(){ h.classList.remove('show'); },300); } /* Brief #5 D4: DOM hitmarker holds 300 ms of REAL time on every hit, however slow the frame rate */
+function popHitmark(){ var h=document.getElementById('hitmark'); if(!h)return; h.classList.remove('pop'); void h.offsetWidth; h.classList.add('pop'); h.classList.add('show'); clearTimeout(hitmarkTimer); hitmarkTimer=setTimeout(function(){ h.classList.remove('show'); },400); } /* Brief #6 D4 (was #5 D4 at 300 ms): DOM hitmarker holds 400 ms of REAL time on every hit, however slow the frame rate */
+var hitFeedTimer=null;
+function showHitFeed(dmg,weak,killed){ /* Brief #6 D4: hitmarker + damage number anchored AT THE CROSSHAIR in the DOM for 400 ms of real time — at ~2 FPS the world-space tracer / damage floaters fall between frames; this cannot */
+ var el=document.getElementById('hitFeed'); if(!el)return;
+ document.getElementById('hitFeedDmg').textContent=Math.round(dmg);
+ document.getElementById('hitFeedTag').textContent=killed?'KILL':(weak?'WEAK POINT':'');
+ el.className='on'+(weak?' weak':'')+(killed?' kill':''); el.id='hitFeed';
+ clearTimeout(hitFeedTimer); hitFeedTimer=setTimeout(function(){ el.classList.remove('on'); },400); }
 function pulseShotFlash(){ var f=document.getElementById('shotFlash'); if(!f)return; f.classList.add('on'); setTimeout(function(){ f.classList.remove('on'); },160); } /* Brief #3 D5: screen-space muzzle flash on EVERY shot, in both renderers */
 function aimDirection(){
  var dir=new THREE.Vector3(-Math.sin(rig.streetYaw)*Math.cos(rig.streetPitch),Math.sin(rig.streetPitch),-Math.cos(rig.streetYaw)*Math.cos(rig.streetPitch));
@@ -2090,19 +2136,57 @@ function nearestRouteInfo(pt){
  best.along=rr._cum[Math.min(best.idx,rr._cum.length-1)]; best.length=rr._length; return best; }
 function roadSnapLanding(pt){
  var ri=nearestRouteInfo(pt);
- if(ri&&ri.d<8){ var c=ri.point.clone(); c.y=0; if(isClearWorld(c))return c; }
+ if(ri&&ri.d<11.25){ var c=ri.point.clone(); c.y=0; if(isClearWorld(c))return c; } /* Brief #6 D2: route centreline wins over any other road point within snap range */
  var f=findLanding(pt,{maxD:11.25});
  if(f)return f;
  if(ri){ var c2=ri.point.clone(); c2.y=0; return c2; }
  return null; }
+/* ---- Brief #6 D2: LIVE dive orientation ----
+   Re-review #6: the staged proof faced the walker, but a LIVE wave-2 dive landed
+   the survivor facing a building mass. The old heading (nearest walker / Union,
+   straight-line) ignores walls. Now: heading comes from the ROUTE toward the
+   incoming group, and a line-of-sight guard verifies it — if a building
+   footprint blocks the facing within 15 m, the heading rotates to the street
+   axis toward the route; failing that it sweeps in 30° steps to the first
+   clear heading. Applies to the live path (beginDiveAt) only; the staged
+   streetProof hook keeps its own aim. */
+function headingLosClear(pt,yaw){
+ var dx=-Math.sin(yaw), dz=-Math.cos(yaw);
+ for(var d=.3;d<=2.26;d+=.28){ if(buildingAt((pt.x+dx*d)/WORLD,-(pt.z+dz*d)/WORLD))return false; } /* Brief #6 D2 guard, extended in-build: footprints sampled out to ~30 sector m — the brief's 15 m trigger is a subset; at 15 m a narrow downtown street still frames a solid building face, so the guard now clears the full face-to-face distance */
+ return true; }
+function streetAxisYaw(pt,targetPt){
+ var sx=pt.x/WORLD, sy=-pt.z/WORLD, best=null,bd=1e9;
+ for(var i=0;i<roadSegments.length;i++){ var s=roadSegments[i], d=pointSeg(sx,sy,s[0],s[1],s[2],s[3]); if(d<bd){bd=d;best=s;} }
+ if(!best)return null;
+ var wx=(best[2]-best[0]), wz=-(best[3]-best[1]); var l=Math.hypot(wx,wz); if(l<.01)return null; wx/=l; wz/=l;
+ var yaws=[Math.atan2(-wx,-wz),Math.atan2(wx,wz)], pick=0;
+ if(targetPt){ var d0=Math.hypot(pt.x-Math.sin(yaws[0])*3-targetPt.x,pt.z-Math.cos(yaws[0])*3-targetPt.z), d1=Math.hypot(pt.x-Math.sin(yaws[1])*3-targetPt.x,pt.z-Math.cos(yaws[1])*3-targetPt.z); pick=d1<d0?1:0; } /* point 3 wu ahead along each candidate heading; nearer the target wins */
+ return yaws[pick]; }
 function facingForLanding(pt){
- var ri=nearestRouteInfo(pt);
- if(ri&&ri.d<8){ var r=sector.routes[ri.route]; var back=sampleRouteAt(r,Math.max(0,ri.along-14));
-  var dx=back.x-pt.x, dz=back.z-pt.z; if(Math.hypot(dx,dz)>.01)return Math.atan2(-dx,-dz); }
- var bz=null,bd=1e9;
- zombies.forEach(function(z){ if(!z.alive)return; var p=zombiePos(z); var d=Math.hypot(p.x-pt.x,p.z-pt.z); if(d<bd){bd=d;bz=p;} });
- if(bz)return Math.atan2(-(bz.x-pt.x),-(bz.z-pt.z));
- var toU=rig.unionPos.clone().sub(pt); return Math.atan2(-toU.x,-toU.z); }
+ var ri=nearestRouteInfo(pt), base=null, targetPt=null;
+ if(ri&&ri.d<11.25){ var r=sector.routes[ri.route]; var back=sampleRouteAt(r,Math.max(0,ri.along-16));
+  targetPt=back; var dx=back.x-pt.x, dz=back.z-pt.z; if(Math.hypot(dx,dz)>.01)base=Math.atan2(-dx,-dz); }
+ if(base===null){ /* off-route landing: face DOWN THE STREET toward the threat, not straight-line through the block — the street axis aimed at the nearest route point / walker group is the base heading (v2: the first live-dive proof frame still framed a building face when the survivor stood on a side street off the route) */
+  var near=[]; zombies.forEach(function(z){ if(!z.alive)return; var p=zombiePos(z); near.push({p:p,d:Math.hypot(p.x-pt.x,p.z-pt.z)}); });
+  near.sort(function(a,b){return a.d-b.d}); near=near.slice(0,3);
+  if(near.length){ var cx=0,cz=0; near.forEach(function(n){cx+=n.p.x;cz+=n.p.z;}); targetPt=new THREE.Vector3(cx/near.length,0,cz/near.length); }
+  else if(ri){ targetPt=ri.point.clone(); }
+  else { targetPt=rig.unionPos.clone(); }
+  var ax=streetAxisYaw(pt,targetPt);
+  base=(ax!==null)?ax:Math.atan2(-(targetPt.x-pt.x),-(targetPt.z-pt.z)); }
+ /* v3 (after the desktop real-dive frame): a route CHORD can point across a corner
+    building when the route bends — the frame showed the crosshair resting on a
+    building face with the open corridor at the frame edge. The STREET AXIS is
+    tried FIRST, BOTH signs (toward the route, then away — a lane can be blocked
+    one way and open the other; either way the road is ahead of you). The route
+    chord remains the fallback, then the 30° sweep. */
+ var axT=streetAxisYaw(pt,targetPt), axO=(axT===null?null:axT+Math.PI);
+ if(axT!==null&&headingLosClear(pt,axT))return axT;
+ if(axO!==null&&headingLosClear(pt,axO))return axO;
+ if(headingLosClear(pt,base))return base;
+ if(axT!==null)return axT;
+ for(var k=1;k<=12;k++){ var cand=base+k*Math.PI/6; if(headingLosClear(pt,cand))return cand; }
+ return base; }
 function nearestRoadName(pt){ var sx=pt.x/WORLD, sy=-pt.z/WORLD, best=null,bd=1e9;
  sector.roads.forEach(function(r){ if(!r.n)return; var a=r.pts;
   for(var i=0;i<a.length-2;i+=2){ var d=pointSeg(sx,sy,a[i],a[i+1],a[i+2],a[i+3]); if(d<bd){bd=d;best=r.n;} } });
@@ -2592,7 +2676,7 @@ function bindUI(){
  document.getElementById('testerBtn').addEventListener('click',function(){ document.getElementById('testerModal').classList.remove('hidden'); });
  document.getElementById('testerClose').addEventListener('click',function(){ document.getElementById('testerModal').classList.add('hidden'); });
  var qpBtn=document.getElementById('qaProofBtn'); if(qpBtn)qpBtn.addEventListener('click',function(){ var r=window.__towerDefense.streetProof(); document.getElementById('testerModal').classList.add('hidden'); if(!(r&&r.ok))showToast('Street proof failed: '+((r&&r.error)||'unknown')); });
- var qsBtn=document.getElementById('qaSelfBtn'); if(qsBtn)qsBtn.addEventListener('click',function(){ var out=document.getElementById('selfPlayOut'); out.style.display='block'; out.textContent='Running the real sim — canonical Barricade + Siren + Marksmen, brief #5 tuning…'; setTimeout(function(){ var r=window.__towerDefense.selfPlay(); out.textContent=((r.log||[]).join('\n'))+(r.gate2?'\nGATE 2 — wave 3 Union: '+r.gate2.wave3UnionHp+'% (need >= 50%) · survived to wave 5: '+r.gate2.survivedToWave5:'')+(r.error?'\nERROR: '+r.error:''); },40); });
+ var qsBtn=document.getElementById('qaSelfBtn'); if(qsBtn)qsBtn.addEventListener('click',function(){ var out=document.getElementById('selfPlayOut'); out.style.display='block'; out.textContent='Running the real sim — THREE placements (tuned / first-timer chokepoints / union guard), brief #6 tuning…'; setTimeout(function(){ var r=window.__towerDefense.selfPlay(); out.textContent=((r.log||[]).join('\n'))+(r.gate6?'\nBRIEF #6 GATE (worst case) — wave-2 leak: '+r.gate6.wave2LeakPts+' pts (need <= 10) · wave 3 Union: '+r.gate6.wave3UnionHp+'% (need >= 50%) · PASS: '+r.gate6.pass:'')+(r.error?'\nERROR: '+r.error:''); },40); });
  document.getElementById('devToggle').addEventListener('click',function(){ document.getElementById('healthChip').classList.toggle('dev-on'); });
  Array.prototype.forEach.call(document.querySelectorAll('.tower-card'),function(btn){ btn.addEventListener('click',function(){
   if(state.phase!=='build'){ showToast('Defenses can be deployed between waves.'); return; }
@@ -2784,7 +2868,7 @@ window.__towerDefense={state:state,waves:waves,towers:towers,zombies:zombies,rig
  dive:function(){beginDive();}, ascend:function(){beginAscend(false);}, ascendButton:function(){beginAscend(true); return rig.mode;}, fire:function(){tryFire(false);}, roll:function(){doRoll();}, shove:function(){doShove();}, char:function(){return survivor;}, tps:function(){return {mode:rig.mode,faceYaw:player.faceYaw,aiming:player.aiming,dead:player.dead,ammo:player.ammo};},
  tpsCam:function(){ return {log:rig.hybrid?'TPS CAMERA: hybrid local street renderer':(mapMode?tpsCamLog:'TPS CAMERA: local renderer'),error:tpsCamError||'',branchShipped:'Brief #4 hybrid — Mapbox eagle + local street renderer geo-anchored at the dive point (V4 addendum); Mapbox free-camera TPS retired after re-review #4',hybrid:!!rig.hybrid,streetRendererLive:!!(rig.hybrid&&streetRenderer),mode:rig.mode}; },
  hybrid:function(){ var near=0, near30=0; zombies.forEach(function(z){ if(!z.alive)return; var p=zombiePos(z); var d=Math.hypot(p.x-rig.streetPos.x,p.z-rig.streetPos.z); if(d<=9)near++; /* 9 world units = 120 sector metres */ if(d<=30)near30++; });
-  return {hybrid:!!rig.hybrid,streetRenderer:!!streetRenderer,streetGroupVisible:!!(streetGroup&&streetGroup.visible),mapDisplay:document.getElementById('map').style.display,mode:rig.mode,streetPos:{x:+rig.streetPos.x.toFixed(2),z:+rig.streetPos.z.toFixed(2)},streetYaw:+rig.streetYaw.toFixed(3),zombiesAlive:zombies.filter(function(z){return z.alive}).length,zombiesWithin120m:near,zombiesWithin30wu:near30,zombieMeshCount:zombieMesh?zombieMesh.count:-1,zombieFrustumCulled:zombieMesh?zombieMesh.frustumCulled:null,survivorVisible:!!(survivor&&survivor.visible),loc:document.getElementById('streetLocChip').textContent,lastHit:player.lastHit||null,paused:state.paused}; },
+  return {hybrid:!!rig.hybrid,streetRenderer:!!streetRenderer,streetGroupVisible:!!(streetGroup&&streetGroup.visible),mapDisplay:document.getElementById('map').style.display,mode:rig.mode,streetPos:{x:+rig.streetPos.x.toFixed(2),z:+rig.streetPos.z.toFixed(2)},streetYaw:+rig.streetYaw.toFixed(3),diveLosClear:(rig.mode==='street'||rig.mode==='diving')?headingLosClear(rig.streetPos,rig.streetYaw):null,streetOnRoad:(()=>{try{return +nearestRoad(rig.streetPos.x/WORLD,-rig.streetPos.z/WORLD).toFixed(1)}catch(e){return null}})(),zombiesAlive:zombies.filter(function(z){return z.alive}).length,zombiesWithin120m:near,zombiesWithin30wu:near30,zombieMeshCount:zombieMesh?zombieMesh.count:-1,zombieFrustumCulled:zombieMesh?zombieMesh.frustumCulled:null,survivorVisible:!!(survivor&&survivor.visible),loc:document.getElementById('streetLocChip').textContent,lastHit:player.lastHit||null,paused:state.paused}; },
  streetProof:function(){ /* Brief #5 Proof Gate 1 staging: reset, send wave 1, stand on the Bay centreline ~7 world units behind the advance walker, facing it, sim paused so the frame holds for screenshots. Works in fallback too — enterHybridStreet() exercises the real second-context street renderer. */
   try{ resetSim(); startWave(); var z=null; for(var i=0;i<zombies.length;i++)if(zombies[i].alive){z=zombies[i];break;}
    if(!z)return {error:'no walker spawned on wave start'};
@@ -2802,21 +2886,42 @@ window.__towerDefense={state:state,waves:waves,towers:towers,zombies:zombies,rig
   }catch(err){ return {error:String((err&&err.message)||err)}; } },
  moveTest:function(){ rig._proofStart={x:rig.streetPos.x,z:rig.streetPos.z}; keys.KeyW=true; return {held:'KeyW',start:rig._proofStart}; },
  moveTestEnd:function(){ keys.KeyW=false; var st=rig._proofStart||{x:rig.streetPos.x,z:rig.streetPos.z}; return {dx:+(rig.streetPos.x-st.x).toFixed(2),dz:+(rig.streetPos.z-st.z).toFixed(2),dist:+Math.hypot(rig.streetPos.x-st.x,rig.streetPos.z-st.z).toFixed(2),streetPos:{x:+rig.streetPos.x.toFixed(2),z:+rig.streetPos.z.toFixed(2)}}; },
- selfPlay:function(){ /* Brief #5 Proof Gate 2: canonical 3-tower start — Barricade $60 + Siren $110 + Marksmen $170 = $340 of the $450 start — placed by placeSmart (route coverage, Union convergence), run on the real sim with the Brief #5 tuning (lead-targeting, gate stagger 24 s in waves 1-4, walker HP 40, barricade 14 dmg, marksman 48 dmg) */
-  var log=[]; try{ resetSim();
-   ['barricade','siren','marksman'].forEach(function(tp){ window.__towerDefense.placeSmart(tp); });
-   log.push('towers placed: '+towers.length+' ('+towers.map(function(t){return t.type+'@'+Math.round(t.group.position.x/WORLD)+','+Math.round(-t.group.position.z/WORLD)}).join(' ')+') · credits left $'+state.credits);
-   var perWave=[];
-   for(var wv=0;wv<6&&state.phase!=='ended';wv++){ var leaksBefore=state.leaks.slice(), hpBefore=state.hp;
-    log.push('wave '+(wv+1)+' comp: '+waves[wv].title+' — N'+waves[wv].north+'/W'+waves[wv].west+'/E'+waves[wv].east+' mix '+waves[wv].mix.join('/')+((wv+1)>=2?' + armoured leader on busiest route':''));
-    startWave(); var guard=0;
-    while(state.phase==='wave'&&guard<12000){ stepSim(SIM_DT); guard++; }
-    var leaks=[0,1,2].map(function(i){return state.leaks[i]-leaksBefore[i]});
-    perWave.push({wave:state.wave,unionHp:Math.ceil(state.hp),leaks:leaks,gatesBreached:gates.map(function(g){return g.breached})});
-    log.push('after wave '+state.wave+': Union '+Math.ceil(state.hp)+'% (from '+Math.ceil(hpBefore)+'%) · leaks N/W/E '+leaks.join('/')+' · gates breached '+gates.map(function(g){return g.breached?1:0}).join('/')+' · kills '+state.kills+' · phase '+state.phase);
-    if(state.phase==='ended')break; state.draftPending=false; hideDraft(); }
-   var w3=perWave[2]||{unionHp:0};
-   var result={log:log,perWave:perWave,hp:Math.ceil(state.hp),wave:state.wave,phase:state.phase,gate2:{wave3UnionHp:w3.unionHp,wave3AtLeast50:w3.unionHp>=50,survivedToWave5:perWave.length>=5&&perWave[4].unionHp>0}};
+ placeNear:function(type,amx,amy){ /* Brief #6 D1b: plausible first-time-player placement — the valid highlighted spot nearest an anchor (a route chokepoint / Union guard post), keeping >= 50 m from towers already placed when possible */
+  selectedTowerType=type; var spots=computeValidSpots(type); if(!spots.length)return 0;
+  var best=null,bd=1e18;
+  spots.forEach(function(sp){ var sepOk=true; towers.forEach(function(t){ if(Math.hypot(t.group.position.x/WORLD-sp.mx,-t.group.position.z/WORLD-sp.my)<50)sepOk=false; });
+   var d=Math.hypot(sp.mx-amx,sp.my-amy)+(sepOk?0:400); if(d<bd){bd=d;best=sp;} });
+  if(!best)return 0; placeTower(new THREE.Vector3(best.mx*WORLD,0,-best.my*WORLD)); return towers.length; },
+ routeAnchor:function(ri,frac){ var r=sector.routes[ri]; var p=sampleRouteAt(r,r._length*frac); return {mx:p.x/WORLD,my:-p.z/WORLD}; },
+ selfPlay:function(){ /* Brief #6 D1b HONEST SELF-PLAY: the brief #5 gate ran ONE tuned placement (placeSmart) and claimed 100/100/100 — the live canonical run leaked 22 on wave 2 and did not reproduce it. Now THREE placements run the real sim: (1) tuned placeSmart, (2) first-timer chokepoints — barricade on the King route mid, siren on the Bay route mid, marksmen near the King/Union convergence, (3) Union guard — all three clustered at the stronghold. The reported gate is the WORST case across all three: wave-2 leak <= 10 Union points AND wave 3 ends >= 50% in every run. Brief #6 D1 tuning: wave-2 leader = plain tank HP (was x1.7 = 442), leader Union damage capped 6 (wave 2) / 12 (later), leader gate-chew x.55, marksmen engage a leader in range first while barricades hold the most-progressed walker. */
+  var log=[], runs=[];
+  var configs=[
+   {name:'tuned (placeSmart)',place:function(){ ['barricade','siren','marksman'].forEach(function(tp){ window.__towerDefense.placeSmart(tp); }); }},
+   {name:'first-timer chokepoints',place:function(){ var td=window.__towerDefense; var kA=td.routeAnchor(1,.45), bA=td.routeAnchor(0,.5); td.placeNear('barricade',kA.mx,kA.my); td.placeNear('siren',bA.mx,bA.my); td.placeNear('marksman',sector.stronghold.x,sector.stronghold.y); }}, /* barricade on the King chokepoint, siren on the Bay chokepoint, marksmen guarding Union itself where all three routes converge — the three instincts a first-timer actually has */
+   {name:'union guard cluster',place:function(){ var td=window.__towerDefense; var sx=sector.stronghold.x, sy=sector.stronghold.y; td.placeNear('barricade',sx-150,sy+90); td.placeNear('siren',sx+150,sy+90); td.placeNear('marksman',sx,sy-170); }}];
+  try{
+   configs.forEach(function(cfg){
+    resetSim(); cfg.place();
+    log.push('=== RUN: '+cfg.name+' — towers '+towers.length+' ('+towers.map(function(t){return t.type+'@'+Math.round(t.group.position.x/WORLD)+','+Math.round(-t.group.position.z/WORLD)}).join(' ')+') · credits left $'+state.credits);
+    var perWave=[];
+    for(var wv=0;wv<5&&state.phase!=='ended';wv++){ var leaksBefore=state.leaks.slice(), hpBefore=state.hp; /* waves 1–5: the gate judges wave 2, wave 3 and survival to wave 5 */
+     if(wv===0)log.push('wave 1 comp: '+waves[0].title+' — N'+waves[0].north+'/W'+waves[0].west+'/E'+waves[0].east);
+     if(wv===1)log.push('wave 2 comp: '+waves[1].title+' — N'+waves[1].north+'/W'+waves[1].west+'/E'+waves[1].east+' + armoured leader on King West (busiest)');
+     startWave(); var guard=0;
+     while(state.phase==='wave'&&guard<12000){ stepSim(SIM_DT); guard++; }
+     var leaks=[0,1,2].map(function(i){return state.leaks[i]-leaksBefore[i]});
+     perWave.push({wave:state.wave,unionHp:Math.ceil(state.hp),hpLost:Math.round((hpBefore-state.hp)*10)/10,leaks:leaks,gatesBreached:gates.map(function(g){return g.breached})});
+     log.push('  after wave '+state.wave+': Union '+Math.ceil(state.hp)+'% (lost '+(Math.round((hpBefore-state.hp)*10)/10)+' pts) · leaks N/W/E '+leaks.join('/')+' · gates breached '+gates.map(function(g){return g.breached?1:0}).join('/')+' · kills '+state.kills+' · phase '+state.phase);
+     if(state.phase==='ended')break; state.draftPending=false; hideDraft(); }
+    var w2=perWave[1]||{hpLost:99,unionHp:0}, w3=perWave[2]||{unionHp:0};
+    runs.push({name:cfg.name,perWave:perWave,wave2LeakPts:w2.hpLost,wave2UnionHp:w2.unionHp,wave3UnionHp:w3.unionHp,survivedToWave5:perWave.length>=5&&perWave[4].unionHp>0});
+    log.push('  RUN GATE: wave-2 leak '+w2.hpLost+' pts (bar <= 10) · wave 3 ends '+w3.unionHp+'% (bar >= 50%)');
+   });
+   var worstLeak=Math.max.apply(null,runs.map(function(r){return r.wave2LeakPts}));
+   var worstW3=Math.min.apply(null,runs.map(function(r){return r.wave3UnionHp}));
+   var pass=worstLeak<=10&&worstW3>=50;
+   log.push('WORST CASE (all 3 placements): wave-2 leak '+worstLeak+' pts · wave-3 Union '+worstW3+'% · BRIEF #6 GATE: '+(pass?'PASS':'FAIL'));
+   var result={log:log,runs:runs,worstCase:{wave2LeakPts:worstLeak,wave3UnionHp:worstW3,pass:pass},perWave:runs[0]?runs[0].perWave:[],hp:runs[0]?runs[0].wave3UnionHp:0,gate2:{wave3UnionHp:worstW3,wave3AtLeast50:worstW3>=50,survivedToWave5:runs.every(function(r){return r.survivedToWave5})},gate6:{wave2LeakPts:worstLeak,wave2LeakAtMost10:worstLeak<=10,wave3UnionHp:worstW3,pass:pass}};
    resetSim(); return result;
   }catch(err){ return {log:log,error:String((err&&err.message)||err)}; } },
  /* ---- QA hooks for fix brief #2 gates ---- */

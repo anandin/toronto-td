@@ -1971,7 +1971,7 @@ function stepSim(dt){
     if(z.atkT>0)z.atkT-=dt;
     if(pd<1.35){ if(z.atkT<=0){ z.windup+=dt; if(z.windup>=.4){ z.windup=0; z.atkT=.9; if(pd<1.6)hurtPlayer(12); } } }
     else z.windup=0;
-    return; } }
+    if(!z.detour)return; } } /* Ticket-01 fix: a detouring walker must NOT stop here — the old unconditional return froze z.detourDist the moment it entered chase range (4.2 wu = 56 m), and moveChase's building rejection then pinned it inside a footprint forever (harness proof: party froze at 54-56 m, inside buildings, full HP, for 25+ s). Falling through lets the march below advance the detour anchor — which passes through the dive point — while the chase/attack logic above still runs. */
   /* return to anchor */
   if(z.chaseX||z.chaseZ){ var cl=Math.hypot(z.chaseX,z.chaseZ); if(cl>.02){ var back=Math.min(cl,1.4*dt); z.chaseX-=z.chaseX/cl*back; z.chaseZ-=z.chaseZ/cl*back; } else { z.chaseX=0; z.chaseZ=0; } }
   /* shuttle siege */

@@ -791,6 +791,7 @@ var simAcc=0, radioTimer=4, lastFeedStreet=0;
    sim seconds vs wall seconds (cadence proof), tower shots fired per type,
    tower damage dealt, gate damage taken per route, leak points per route. */
 var waveStats={wave:0,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1};
+var diveDbg={ptr:'—',click:'—',land:'—'}; /* Ticket-03: dive-pipeline witness for the dev chip — ptr = raw unproject + world metres of the last pointer event, click = the dive click point + resolveLanding kind/result, land = the final streetPos + yaw. Re-reviews #11/#12 both funnelled to one Union-area spot on the Mapbox build while the same pipeline is correct in the fallback sim; these three readings discriminate pointer vs resolver vs anchor in one live run. */
 function resetWaveStats(){ waveStats={wave:state.wave,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1}; }
 function waveStatsLine(){ return 'sim '+waveStats.simSec.toFixed(0)+'s/wall '+waveStats.wallSec.toFixed(0)+'s · shots B'+waveStats.shots.barricade+'/S'+waveStats.shots.siren+'/M'+waveStats.shots.marksman+' · towerDmg '+Math.round(waveStats.towerDmg)+' · gateDmg '+waveStats.gateDmg.map(function(v){return Math.round(v)}).join('/')+' · leakPts '+waveStats.leakPts.map(function(v){return Math.round(v)}).join('/')+' · routed '+(waveStats.routed>=0?('R'+(waveStats.routed+1)+' '+routeNames3[waveStats.routed]):'—'); } /* Brief #9 D4: the routed column's route rides the wave line */
 
@@ -2878,7 +2879,7 @@ function updateViewChip(){
 
 /* ================= input ================= */
 function setPointer(e){ var el=viewEl(); if(!el)return; var r=el.getBoundingClientRect(); pointer.x=((e.clientX-r.left)/r.width)*2-1; pointer.y=-((e.clientY-r.top)/r.height)*2+1; pointerClient={x:e.clientX-r.left,y:e.clientY-r.top};
- if(mapMode&&map){ var ll=map.unproject([e.clientX-r.left,e.clientY-r.top]); pointerLngLat=ll; var loc=lngLatToLocal(ll.lng,ll.lat); pointerWorld.set(loc.x*WORLD,0,-loc.y*WORLD); } }
+ if(mapMode&&map){ var ll=map.unproject([e.clientX-r.left,e.clientY-r.top]); pointerLngLat=ll; var loc=lngLatToLocal(ll.lng,ll.lat); pointerWorld.set(loc.x*WORLD,0,-loc.y*WORLD); diveDbg.ptr='ll '+ll.lng.toFixed(5)+','+ll.lat.toFixed(5)+' w '+Math.round(loc.x)+','+Math.round(loc.y); } }
 function onPointerDown(e){
  SFX.resume(); setPointer(e);
  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -2926,7 +2927,7 @@ function handleMapClick(e){
   var clickPt=null;
   if(mapMode)clickPt=pointerWorld;
   else { raycaster.setFromCamera(pointer,camera); var cp=new THREE.Vector3(); if(raycaster.ray.intersectPlane(groundPlane,cp))clickPt=cp; }
-  beginDiveAt(resolveLanding(clickPt||rig.target.clone())); return; }
+  var _res=resolveLanding(clickPt||rig.target.clone()); if(clickPt)diveDbg.click='click '+Math.round(clickPt.x/WORLD)+','+Math.round(-clickPt.z/WORLD)+' kind '+_res.kind+' res '+Math.round(_res.point.x/WORLD)+','+Math.round(-_res.point.z/WORLD); beginDiveAt(_res); return; }
  if(mapMode){ var rct=viewEl().getBoundingClientRect(), th=null, td=34;
   towers.forEach(function(t){ var sp=projectToScreen(t.group.position); var d=Math.hypot(sp.x-(e.clientX-rct.left),sp.y-(e.clientY-rct.top)); if(d<td){td=d;th=t;} });
   if(th){ selectTower(th); return; } placeTower(pointerWorld.clone()); return; }
@@ -3218,6 +3219,7 @@ setInterval(function(){
  chip.textContent='MAP LOADS '+mapLoadCount+' · '+(mapMode?'MAPBOX':'LOCAL')+' · '+health.fps+' FPS · P95 '+p95.toFixed(1)+' MS · DRAWS '+(health.draws||0)+' · TILES '+(mapMode?(tilesReady?'LOADED':'LOADING'):'—')+' · Q'+health.qLevel
   +' · WAVE '+waveStats.wave+' '+waveStatsLine() /* Brief #8 D1: the live counters, on the dev panel next to the FPS readout they exonerate or indict */
   +' · DIVE '+(rig._diveScored?('kind '+rig._diveScored.kind+' (road-anchored) · los log '+fmtClear(rig._diveScored.clear)+' m'):'—') /* Brief #9 D2: the clear-ray is a LOG line only ("los log") — the spawn is road-anchored, no ray is scored or gated */
+  +' · PTD '+diveDbg.ptr+' | '+diveDbg.click+' | '+diveDbg.land /* Ticket-03 witness (see diveDbg declaration) */
   +' · GATE: '+(gate?gate.reason:'n/a')+' · LAST MAP ERROR: '+(gate&&gate.lastError?gate.lastError:'none')
   +' · '+(mapMode?tpsCamLog:'TPS CAMERA: local renderer')+(tpsCamError?' · TPS ERROR: '+tpsCamError:'');
  qualityTick(p95);

@@ -1856,7 +1856,7 @@ function routeColumnToDive(){
   var near=nearestOnRoute(r,dive); if(!near)return;
   var rejoin=Math.min(Math.max(z.dist+30,near.along+40),r._length-20);
   if(rejoin<=z.dist+5)return; /* dive point is effectively at the route's end — nowhere to bend to */
-  var pts=[sampleRouteAt(r,z.dist),dive.clone(),sampleRouteAt(r,rejoin)];
+  var pts=[sampleRouteAt(r,z.dist),dive.clone(),sampleRouteAt(r,rejoin)]; /* Ticket-02 D3 tested and REVERTED same day: a route-corridor waypoint leg (~1,700 m vs ~900 m chord) doubled time-to-contact and kept the party inside route tower coverage until the wave ended — harness: party died ~380 m out, zero contact. The straight chord is what makes the fight arrive; the facing fix (D2) is what makes it visible. */
   var cum=[0],tot=0; for(var k=1;k<pts.length;k++){ tot+=pts[k].distanceTo(pts[k-1])/WORLD; cum.push(tot); }
   z.detour={pts:pts,cum:cum,len:tot,rejoin:rejoin}; z.detourDist=0; routedRoutes[z.route]=1; });
  var hits=Object.keys(routedRoutes).map(Number);
@@ -2566,6 +2566,7 @@ function beginDiveAt(res){
     screen and the player stays in eagle (still armed) to pick another spot —
     instead of landing inside a block facing a wall, as three rounds of
     ray-scored headings kept doing. */
+ if(res.kind==='centre'){ showToast('No clear road near your click — pick another spot'); return; } /* Ticket-02 D1: the 'centre' fallback landed players near the MAP CENTRE regardless of where they clicked (re-review #11: King and Yonge clicks both landed on the same University Ave spot). A landing the player did not choose is worse than a refusal — stay armed and say why. */
  var anchor=roadAnchoredSpawn(res.point);
  if(!anchor){ showToast('No clear road here — pick another spot'); return; }
  disarmDive();
@@ -2589,7 +2590,11 @@ function beginDiveAt(res){
  document.getElementById('reticleChip').classList.remove('on');
  if(res.kind==='snapped')showToast('Snapped to the road centreline — landing now.');
  else if(res.kind==='centre')showToast('No clear street near your click — landing at the route point nearest the city centre.');
- if(state.phase==='wave')routeColumnToDive(); /* Brief #9 D4: the fight comes to the dive street — the nearest active column's advance party bends through this road (no-op between waves: street stays free-roam) */
+ if(state.phase==='wave'){ routeColumnToDive(); /* Brief #9 D4: the fight comes to the dive street — the nearest active column's advance party bends through this road (no-op between waves: street stays free-roam) */
+  /* Ticket-02 D2: face the fight — if a party was routed, aim the survivor and the landing camera at the nearest routed walker's actual position (same yaw convention as roadFacingYaw). Road-geometry facing alone left the arriving party off-camera in live play (diagnostic: operator attacked while HP bars sat behind a building at frame centre). */
+  if(typeof waveStats!=='undefined'&&waveStats.routed>=0){ var bw=null,bwd=1e18;
+   zombies.forEach(function(z2){ if(z2.alive&&z2.detour&&z2.route===waveStats.routed){ var p2=zombiePos(z2); var d2=Math.hypot(p2.x-rig.streetPos.x,p2.z-rig.streetPos.z); if(d2<bwd){bwd=d2;bw=p2;} } });
+   if(bw){ var fx2=bw.x-rig.streetPos.x, fz2=bw.z-rig.streetPos.z; if(Math.hypot(fx2,fz2)>.5){ rig.streetYaw=Math.atan2(-fx2,-fz2); player.faceYaw=rig.streetYaw; if(survivor)survivor.rotation.y=player.faceYaw; rig.diveToPos.copy(otsCamPos()); } } } }
  SFX.play('deploy',0);
 }
 function updateReticle(){

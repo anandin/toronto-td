@@ -392,6 +392,14 @@
     #contactBanner b { display:block; font:700 21px/1.05 "IBM Plex Sans Condensed",sans-serif; letter-spacing:.05em; }
     #contactBanner small { display:block; margin-top:3px; font:600 10px/1.3 "IBM Plex Mono",monospace; color:#ffb3ab; letter-spacing:.07em; }
     #streetLocChip { position:absolute; left:50%; top:96px; transform:translateX(-50%); padding:6px 12px; border-radius:4px; background:rgba(3,12,16,.85); border:1px solid rgba(120,220,255,.5); color:#aee6ff; font:700 11px/1.3 "IBM Plex Mono",monospace; letter-spacing:.06em; text-align:center; white-space:nowrap; }
+    #partyChip { position:absolute; left:50%; top:130px; transform:translateX(-50%); padding:5px 11px; border-radius:4px; background:rgba(26,8,8,.85); border:1px solid rgba(255,120,90,.55); color:#ffb59f; font:700 11px/1.3 "IBM Plex Mono",monospace; letter-spacing:.06em; text-align:center; white-space:nowrap; display:none; }
+    #partyChip.on { display:block; }
+    #landMarker { position:absolute; width:0; height:0; display:none; z-index:5; pointer-events:none; }
+    #landMarker.on { display:block; }
+    #landMarker i { position:absolute; left:-9px; top:-9px; width:18px; height:18px; border-radius:50%; border:2px solid #2dffb0; background:rgba(45,255,176,.14); box-shadow:0 0 10px rgba(45,255,176,.55); }
+    #landMarker span { position:absolute; left:14px; top:-7px; font:700 10px/1 "IBM Plex Mono",monospace; letter-spacing:.05em; color:#2dffb0; white-space:nowrap; text-shadow:0 1px 3px #000; }
+    #landMarker.warn i { border-color:#ffc46b; box-shadow:0 0 10px rgba(255,196,107,.55); }
+    #landMarker.warn span { color:#ffc46b; }
     #app.street-on .left-rail, #app.street-on .right-rail { display:none; }
     #crosshair .hitmark.show { opacity:1; transform:scale(1); border-color:#ffd27a; }
     /* ---- fix brief #6 D4: DOM hit feedback at the crosshair — 400 ms of real time, frame-rate-proof ---- */
@@ -504,10 +512,12 @@
   <div id="eventChip"></div>
   <div id="chainChip">PRECISION ×2<small>ASCEND TO BANK · A MISS RESETS</small></div>
   <div id="reticleChip"></div>
+  <div id="landMarker"><i></i><span id="landMarkerName"></span></div>
 
   <div id="streetHud">
     <div id="streetRendererChip">STREET · LOCAL RENDERER · GEO-ANCHORED AT YOUR DIVE POINT</div>
     <div id="streetLocChip">—</div>
+    <div id="partyChip">—</div>
     <div id="ascendHint">M / ▲ ASCEND — RETURN TO EAGLE</div>
     <div id="scopeOverlay"></div>
     <div id="crosshair"><div class="hitmark" id="hitmark"></div></div>
@@ -2517,7 +2527,17 @@ function nearestPoiName(pt){ var sx=pt.x/WORLD, sy=-pt.z/WORLD, best=null,bd=1e9
  return bd<600?best:null; }
 function updateStreetLocChip(){ var el=document.getElementById('streetLocChip'); if(!el||!sector)return;
  var road=nearestRoadName(rig.streetPos), poi=nearestPoiName(rig.streetPos);
- el.textContent=((road||'DOWNTOWN STREET').toUpperCase())+(poi?' · NEAR '+(poi.toUpperCase()):''); }
+ el.textContent=((road||'DOWNTOWN STREET').toUpperCase())+(poi?' · NEAR '+(poi.toUpperCase()):'');
+ /* Ticket-04: party indicator — direction + distance to the routed party (else nearest zombie), relative to where the survivor faces */
+ var pc=document.getElementById('partyChip'); if(!pc)return;
+ var bz=null,bzd=1e18;
+ zombies.forEach(function(z){ if(z.alive&&z.detour){ var p=zombiePos(z); var d=Math.hypot(p.x-rig.streetPos.x,p.z-rig.streetPos.z); if(d<bzd){bzd=d;bz=p;} } });
+ var isParty=!!bz;
+ if(!bz)zombies.forEach(function(z){ if(z.alive){ var p=zombiePos(z); var d=Math.hypot(p.x-rig.streetPos.x,p.z-rig.streetPos.z); if(d<bzd){bzd=d;bz=p;} } });
+ if(bz){ var want=Math.atan2(-(bz.x-rig.streetPos.x),-(bz.z-rig.streetPos.z)); var rel=want-rig.streetYaw; while(rel>Math.PI)rel-=2*Math.PI; while(rel<-Math.PI)rel+=2*Math.PI;
+  var arrows=['↑','↗','→','↘','↓','↙','←','↖']; var ai=((Math.round(rel/(Math.PI/4))%8)+8)%8;
+  pc.textContent=arrows[ai]+' '+(isParty?'PARTY':'CONTACT')+' '+Math.round(bzd/WORLD)+' M'; pc.classList.add('on'); }
+ else { pc.classList.remove('on'); pc.textContent='—'; } }
 /* ---- Fix brief #2, Critical 2a: a dive resolution that CANNOT fail.
    direct (clear point at the click) → snapped (nearest clear street/route
    point within 150 m) → centre (route point nearest screen centre). ---- */
@@ -2573,7 +2593,7 @@ function beginDiveAt(res){
  disarmDive();
  selectedTowerType=null; clearSelection(); hidePlacementHints(); updateButtons(); /* Brief #7 D5: tower selection is CLEARED on entering street mode — in re-review #7 a tower stayed selected into the dive and firing raised a "Too close to the road" placement banner mid-fight */
  rig.landing=anchor.point; rig.landingOk=true; rig._roadAnchor=anchor;
- rig.mode='diving'; rig.diveT=0;
+ rig.mode='diving'; rig.diveT=0; streetFirstClick=true; /* Ticket-04: re-arm the grab-aim click for the new street entry */
  rig.diveFromPos.copy(camera.position); rig.diveFromQuat.copy(camera.quaternion);
  rig.streetPos.copy(anchor.point); rig.streetPos.y=0;
  diveDbg.land='land '+Math.round(rig.streetPos.x/WORLD)+','+Math.round(-rig.streetPos.z/WORLD)+' yaw '+(rig.streetYaw||0).toFixed(2); /* Ticket-03 witness */
@@ -2592,15 +2612,13 @@ function beginDiveAt(res){
  document.getElementById('reticleChip').classList.remove('on');
  if(res.kind==='snapped')showToast('Snapped to the road centreline — landing now.');
  else if(res.kind==='centre')showToast('No clear street near your click — landing at the route point nearest the city centre.');
- if(state.phase==='wave'){ routeColumnToDive(); /* Brief #9 D4: the fight comes to the dive street — the nearest active column's advance party bends through this road (no-op between waves: street stays free-roam) */
-  /* Ticket-02 D2: face the fight — if a party was routed, aim the survivor and the landing camera at the nearest routed walker's actual position (same yaw convention as roadFacingYaw). Road-geometry facing alone left the arriving party off-camera in live play (diagnostic: operator attacked while HP bars sat behind a building at frame centre). */
-  if(typeof waveStats!=='undefined'&&waveStats.routed>=0){ var bw=null,bwd=1e18;
-   zombies.forEach(function(z2){ if(z2.alive&&z2.detour&&z2.route===waveStats.routed){ var p2=zombiePos(z2); var d2=Math.hypot(p2.x-rig.streetPos.x,p2.z-rig.streetPos.z); if(d2<bwd){bwd=d2;bw=p2;} } });
-   if(bw){ var fx2=bw.x-rig.streetPos.x, fz2=bw.z-rig.streetPos.z; if(Math.hypot(fx2,fz2)>.5){ rig.streetYaw=Math.atan2(-fx2,-fz2); player.faceYaw=rig.streetYaw; if(survivor)survivor.rotation.y=player.faceYaw; rig.diveToPos.copy(otsCamPos()); } } } }
+ if(state.phase==='wave')routeColumnToDive(); /* Brief #9 D4: the fight comes to the dive street — the nearest active column's advance party bends through this road (no-op between waves: street stays free-roam) */
+ /* Ticket-04: Ticket-02 D2 (face the party's exact bearing at spawn) REVERTED — the PTD diagnostic showed a distant party's bearing cuts diagonally across intersections, framing the corner building (3 landings, 3 walls). Spawn facing stays road-geometry (roadFacingYaw: along the street, toward the column); the party's direction is carried by the street party indicator instead. */
  SFX.play('deploy',0);
 }
 function updateReticle(){
  var chip=document.getElementById('reticleChip'), cursor=document.getElementById('diveCursor');
+ var lmEl=document.getElementById('landMarker'); if(lmEl)lmEl.classList.remove('on'); /* Ticket-04: marker re-shown at the bottom only when a landing is armed and resolvable */
  if(rig.mode!=='eagle'||state.phase==='ended'||(rig.elev>45&&!rig.diveArmed)){ chip.classList.remove('on'); if(cursor)cursor.classList.remove('on'); rig.landingOk=false; return; }
  var pt;
  if(mapMode){ if(!pointerLngLat){ chip.classList.remove('on'); if(cursor)cursor.classList.remove('on'); return; } pt=pointerWorld; }
@@ -2608,18 +2626,21 @@ function updateReticle(){
  var lockLeft=Math.max(0,Math.ceil((player.diveLockUntil-performance.now())/1000));
  var res=classifyLanding(pt); rig.landing=res.point; rig.landingOk=lockLeft<=0;
  if(res.roadOk===undefined)res.roadOk=!!roadAnchoredSpawn(res.point); /* Brief #9 D2: the chip must not promise a landing the road anchor would refuse — checked once per classified point (classifyLanding caches the object for 120 ms) */
+ if(res.roadName===undefined)res.roadName=(nearestRoadName(res.point)||'STREET').toUpperCase(); /* Ticket-04: the landing is NAMED before the click, in the chip and on the map marker */
  chip.classList.add('on');
  var short='';
  if(lockLeft>0){ chip.className='on bad'; chip.textContent='REDEPLOY LOCKED · '+lockLeft+' S'; short='REDEPLOY LOCKED · '+lockLeft+' S'; }
  else if(!res.roadOk){ chip.className='on bad'; chip.textContent='✕ NO CLEAR ROAD HERE — PICK ANOTHER SPOT'; short='NO CLEAR ROAD HERE'; }
- else if(res.kind==='direct'){ chip.className='on ok'; chip.textContent='● LANDING CLEAR — CLICK TO DIVE'; short='LANDING CLEAR — CLICK TO DIVE'; }
- else if(res.kind==='snapped'){ chip.className='on ok'; chip.style.borderColor='var(--amber-soft)'; chip.textContent='● SNAPPED LANDING NEARBY — CLICK TO DIVE'; short='SNAPPED LANDING — CLICK TO DIVE'; }
- else { chip.className='on ok'; chip.style.borderColor='var(--amber-soft)'; chip.textContent='● DIVE WILL LAND AT THE ROUTE NEAR CENTRE — CLICK TO DIVE'; short='CENTRE FALLBACK — CLICK TO DIVE'; }
+ else if(res.kind==='direct'){ chip.className='on ok'; chip.textContent='● LANDING: '+res.roadName+' — CLICK TO DIVE'; short='LANDING: '+res.roadName+' — CLICK TO DIVE'; }
+ else if(res.kind==='snapped'){ chip.className='on ok'; chip.style.borderColor='var(--amber-soft)'; chip.textContent='● SNAPPED TO '+res.roadName+' — CLICK TO DIVE'; short='SNAPPED TO '+res.roadName+' — CLICK TO DIVE'; }
+ else { chip.className='on bad'; chip.textContent='✕ NO ROAD WITHIN REACH OF THIS CLICK — DIVE WILL REFUSE'; short='DIVE WILL REFUSE'; }
  if(res.kind==='direct')chip.style.borderColor='';
  /* Fix brief #2, Critical 2b: landing state rides the cursor, large + high contrast, whenever armed */
  if(cursor){ if(rig.diveArmed&&lockLeft<=0){ cursor.classList.add('on'); cursor.classList.toggle('warn',res.kind!=='direct'||!res.roadOk);
    cursor.textContent=short; cursor.style.left=pointerClient.x+'px'; cursor.style.top=pointerClient.y+'px'; }
   else cursor.classList.remove('on'); }
+ /* Ticket-04: the landing marker sits ON the resolved point, named — what you see is where you land */
+ if(lmEl&&rig.diveArmed&&lockLeft<=0&&res.roadOk&&res.kind!=='centre'){ var sp2=projectToScreen(res.point); if(sp2&&!sp2.behind){ lmEl.style.left=sp2.x+'px'; lmEl.style.top=sp2.y+'px'; lmEl.classList.add('on'); lmEl.classList.toggle('warn',res.kind!=='direct'); var lnEl=document.getElementById('landMarkerName'); if(lnEl)lnEl.textContent=res.roadName; } }
 }
 function beginDive(){
  if(rig.mode!=='eagle')return;
@@ -2887,7 +2908,7 @@ function onPointerDown(e){
  if(pointers.size===2){ var ps=Array.from(pointers.values()); pinchDist=Math.hypot(ps[0].x-ps[1].x,ps[0].y-ps[1].y); }
  viewEl().setPointerCapture&&viewEl().setPointerCapture(e.pointerId);
  if(rig.mode==='street'){ /* Brief #9 D1: the click test STARTS here — a pointer press ON THE STREET CANVAS (this handler exists only on canvases; HUD buttons never run it, so their presses can never arm a shot) */
-  if(e.button===0)streetDownAt={t:performance.now(),travel:0,x:e.clientX,y:e.clientY,id:e.pointerId};
+  if(e.button===0){ streetDownAt={t:performance.now(),travel:0,x:e.clientX,y:e.clientY,id:e.pointerId,first:streetFirstClick}; streetFirstClick=false; }
   return; }
  panDrag={x:e.clientX,y:e.clientY,moved:false};
 }
@@ -2916,7 +2937,7 @@ function onPointerUp(e){
  if(rig.mode==='street'){ /* Brief #9 D1: THE ONLY rifle-fire path in the game. This handler is bound exclusively to the render canvases, so a shot can only originate from a press that began on the canvas (streetDownAt, set in onPointerDown) and is released on the canvas with < 7 px total travel. Clicks on ASCEND / SEND WAVE / any HUD element target those elements — they never touch this handler and can never fire. At any ambiguity (drag, long press, mismatched pointer) the resolution is NOT firing. */
   if(e.button===2)player.aiming=false;
   if(streetDownAt&&e.pointerId===streetDownAt.id){ var sd=streetDownAt; streetDownAt=null;
-   if((e.button===0||e.pointerType==='touch')&&sd.travel<7&&performance.now()-sd.t<600)tryFire(false); }
+   if((e.button===0||e.pointerType==='touch')&&!sd.first&&sd.travel<7&&performance.now()-sd.t<600)tryFire(false); }
   return; }
  if(panDrag&&!panDrag.moved&&(e.pointerType!=='mouse'||e.button===0)){ handleMapClick(e); }
  panDrag=null;
@@ -2969,6 +2990,7 @@ function onWheel(e){ e.preventDefault(); SFX.resume(); setPointer(e); zoomBy(Mat
    deltas in onPointerMove); a drag that rotated the camera never fires, and
    at any threshold ambiguity the resolution is NOT firing. */
 var streetDownAt=null;
+var streetFirstClick=true; /* Ticket-04: the first canvas press after entering street mode grabs aim/pointer-lock and never fires (re-review #12: the lock-aim click discharged the rifle) */
 function onMouseDown(e){
  SFX.resume();
  if(rig.mode==='street'){

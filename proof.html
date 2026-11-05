@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Toronto TD — Marble Street Proof</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#05070c;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace;color:#dfe7ee;}
+  #view{position:fixed;inset:0;}
+  canvas{display:block;}
+  .chip{position:fixed;z-index:5;background:rgba(8,14,20,.78);border:1px solid rgba(140,180,200,.35);border-radius:8px;padding:8px 11px;font-size:11px;letter-spacing:.05em;backdrop-filter:blur(6px);}
+  #title{top:12px;left:12px;color:#ffb35c;font-weight:700;}
+  #title small{display:block;color:#9fb4c0;font-weight:400;margin-top:3px;letter-spacing:.02em;}
+  #hint{bottom:12px;left:12px;color:#9fb4c0;}
+  #flipBtn{top:12px;right:12px;cursor:pointer;color:#dfe7ee;}
+  #flipBtn:active{background:rgba(60,90,110,.8);}
+  .mvbtn{position:fixed;z-index:5;width:58px;height:58px;border-radius:50%;background:rgba(8,14,20,.7);border:1px solid rgba(140,180,200,.4);color:#dfe7ee;font-size:20px;display:flex;align-items:center;justify-content:center;user-select:none;-webkit-user-select:none;touch-action:none;}
+  #fwd{right:18px;bottom:86px;} #back{right:18px;bottom:18px;}
+  #load{position:fixed;inset:0;z-index:9;background:#05070c;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;}
+  #load .big{color:#ffb35c;font-size:15px;letter-spacing:.08em;}
+  #load .small{color:#9fb4c0;font-size:12px;max-width:420px;line-height:1.5;}
+  #fallback{display:none;position:fixed;inset:0;z-index:8;background:#05070c;}
+  #fallback img{width:100%;height:100%;object-fit:cover;display:block;}
+  #fallback .cap{position:fixed;left:12px;bottom:12px;right:12px;z-index:9;}
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div class="chip" id="title">MARBLE STREET — LOOK PROOF<small>Photoreal generated Toronto street (World Labs Marble). This is the environment street fights would move into. Judge the look.</small></div>
+<button class="chip" id="flipBtn">FLIP VIEW</button>
+<div class="chip" id="hint">Drag to look around · scroll / W A S D to move · buttons to walk</div>
+<div class="mvbtn" id="fwd">▲</div>
+<div class="mvbtn" id="back">▼</div>
+<div id="load"><div class="big">LOADING THE STREET…</div><div class="small">Streaming the generated world (about 8 MB). A few seconds on Wi-Fi.</div></div>
+<div id="fallback"><img src="proof-fallback.jpg" alt="Marble street still"><div class="chip cap">The live 3D world did not start on this device, so here is a still from the same generated street. The look is the point: wet asphalt, sodium light, neon, steam.</div></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+  "@sparkjsdev/spark": "https://cdn.jsdelivr.net/npm/@sparkjsdev/spark@0.1.10/dist/spark.module.js"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { SplatMesh } from '@sparkjsdev/spark';
+
+let rendered = false;
+const loadEl = document.getElementById('load');
+
+/* World frame (measured from the world's own collider mesh, not guessed):
+   Marble space is Y-DOWN — the ground slab sits at y = +0.65 (the dense max),
+   towers extend to y = -18. Flip X by PI to stand it up in three.js Y-up,
+   scale by the world's metric factor so 1 unit = 1 metre, then lift so the
+   ground rests at y = 0. */
+const METRIC = 3.2465643882751465, GROUND_Y = 0.65;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05070c);
+const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 900);
+const rig = { yaw: 0.6, pitch: -0.03, pos: new THREE.Vector3(2.5, 1.8, 6) };
+camera.position.copy(rig.pos);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.getElementById('view').appendChild(renderer.domElement);
+
+const world = new THREE.Group();
+world.rotation.x = Math.PI;
+world.scale.setScalar(METRIC);
+world.position.y = GROUND_Y * METRIC;
+scene.add(world);
+
+const splat = new SplatMesh({ url: 'street.spz' });
+world.add(splat);
+if (splat.initialized && splat.initialized.then) splat.initialized.then(() => { loadEl.style.display = 'none'; }).catch(() => {});
+setTimeout(() => { loadEl.style.display = 'none'; }, 9000); /* the render loop below is the real proof; never trap the user on a spinner */
+
+/* --- look + move controls (drag look, wheel/WASD/buttons to move) --- */
+let dragging = false, lx = 0, ly = 0, moveF = 0, moveB = 0;
+const el = renderer.domElement;
+el.style.touchAction = 'none';
+el.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; el.setPointerCapture(e.pointerId); });
+el.addEventListener('pointermove', e => { if (!dragging) return; rig.yaw -= (e.clientX - lx) * 0.0032; rig.pitch -= (e.clientY - ly) * 0.0028; rig.pitch = Math.max(-1.2, Math.min(1.2, rig.pitch)); lx = e.clientX; ly = e.clientY; });
+el.addEventListener('pointerup', () => { dragging = false; });
+addEventListener('wheel', e => { rig.pos.addScaledVector(fwdVec(), -Math.sign(e.deltaY) * 1.6); clampPos(); }, { passive: true });
+const keys = {};
+addEventListener('keydown', e => { keys[e.code] = true; });
+addEventListener('keyup', e => { keys[e.code] = false; });
+function bindHold(id, set) { const b = document.getElementById(id); b.addEventListener('pointerdown', e => { e.preventDefault(); set(1); }); ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, () => set(0))); }
+bindHold('fwd', v => { moveF = v; });
+bindHold('back', v => { moveB = v; });
+let flipped = false;
+document.getElementById('flipBtn').addEventListener('click', () => { flipped = !flipped; world.rotation.x = flipped ? 0 : Math.PI; world.position.y = flipped ? -GROUND_Y * METRIC : GROUND_Y * METRIC; });
+
+function fwdVec() { return new THREE.Vector3(-Math.sin(rig.yaw) * Math.cos(rig.pitch), Math.sin(rig.pitch), -Math.cos(rig.yaw) * Math.cos(rig.pitch)); }
+function clampPos() { rig.pos.x = Math.max(-220, Math.min(220, rig.pos.x)); rig.pos.z = Math.max(-220, Math.min(220, rig.pos.z)); rig.pos.y = Math.max(0.5, Math.min(80, rig.pos.y)); }
+let last = performance.now();
+renderer.setAnimationLoop(() => {
+  const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const sp = (keys.ShiftLeft ? 14 : 6) * dt, f = fwdVec(); f.y = 0; f.normalize();
+  const r = new THREE.Vector3().crossVectors(f, new THREE.Vector3(0, 1, 0)).negate();
+  if (keys.KeyW || keys.ArrowUp || moveF) rig.pos.addScaledVector(f, sp);
+  if (keys.KeyS || keys.ArrowDown || moveB) rig.pos.addScaledVector(f, -sp);
+  if (keys.KeyA || keys.ArrowLeft) rig.pos.addScaledVector(r, -sp);
+  if (keys.KeyD || keys.ArrowRight) rig.pos.addScaledVector(r, sp);
+  clampPos();
+  camera.position.copy(rig.pos);
+  camera.lookAt(rig.pos.clone().add(fwdVec()));
+  renderer.render(scene, camera);
+  rendered = true;
+});
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+/* Fallback: if nothing rendered after 14 s (CDN or WebGL blocked), show the still from the same world. */
+setTimeout(() => { if (!rendered) { document.getElementById('fallback').style.display = 'block'; loadEl.style.display = 'none'; } }, 14000);
+</script>
+</body>
+</html>

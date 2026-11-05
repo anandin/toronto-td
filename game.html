@@ -811,7 +811,7 @@ var simAcc=0, radioTimer=4, lastFeedStreet=0;
    tower damage dealt, gate damage taken per route, leak points per route. */
 var waveStats={wave:0,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1};
 var diveDbg={ptr:'—',click:'—',land:'—'}; /* Ticket-03: dive-pipeline witness for the dev chip — ptr = raw unproject + world metres of the last pointer event, click = the dive click point + resolveLanding kind/result, land = the final streetPos + yaw. Re-reviews #11/#12 both funnelled to one Union-area spot on the Mapbox build while the same pipeline is correct in the fallback sim; these three readings discriminate pointer vs resolver vs anchor in one live run. */
-var BUILD_TAG='T08'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
+var BUILD_TAG='T09'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
 function resetWaveStats(){ waveStats={wave:state.wave,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1}; }
 function waveStatsLine(){ return 'sim '+waveStats.simSec.toFixed(0)+'s/wall '+waveStats.wallSec.toFixed(0)+'s · shots B'+waveStats.shots.barricade+'/S'+waveStats.shots.siren+'/M'+waveStats.shots.marksman+' · towerDmg '+Math.round(waveStats.towerDmg)+' · gateDmg '+waveStats.gateDmg.map(function(v){return Math.round(v)}).join('/')+' · leakPts '+waveStats.leakPts.map(function(v){return Math.round(v)}).join('/')+' · routed '+(waveStats.routed>=0?('R'+(waveStats.routed+1)+' '+routeNames3[waveStats.routed]):'—'); } /* Brief #9 D4: the routed column's route rides the wave line */
 
@@ -1182,12 +1182,12 @@ function buildFacadeTextures(){ /* Ticket-08: procedural facade atlas — one se
  return {alb:alb, emi:emi}; }
 function buildStreetGeometry(){
  streetGroup=new THREE.Group(); streetGroup.visible=false;
- var gnd=new THREE.Mesh(new THREE.PlaneGeometry(500,500),new THREE.MeshStandardMaterial({color:0x0d1622,roughness:1,metalness:0}));
+ var gnd=new THREE.Mesh(new THREE.PlaneGeometry(500,500),new THREE.MeshStandardMaterial({color:0x101a28,roughness:.7,metalness:0})); /* Ticket-09: slight sheen + lift */
  gnd.rotation.x=-Math.PI/2; gnd.position.y=-.18; streetGroup.add(gnd);
  var lake=new THREE.Mesh(new THREE.PlaneGeometry(500,140),new THREE.MeshStandardMaterial({color:0x0a1a2c,roughness:.35,metalness:.55}));
  lake.rotation.x=-Math.PI/2; lake.position.set(0,-.14,170); streetGroup.add(lake);
  /* road ribbons — same sector streets, positions only (roadSegments already built) */
- var pos=[],cols=[], asphalt=new THREE.Color(0x1b2735), majorC=new THREE.Color(0x232f42);
+ var pos=[],cols=[], asphalt=new THREE.Color(0x232f3d), majorC=new THREE.Color(0x2c3a4e); /* Ticket-09: lifted one step so the ribbons read as a surface, not a void */
  sector.roads.forEach(function(r){
   var isMajor=(r.c==='primary'||r.c==='secondary'||r.c==='tertiary');
   var wdt=isMajor?1.05:.55, col=isMajor?majorC:asphalt, arr=r.pts;
@@ -1198,7 +1198,7 @@ function buildStreetGeometry(){
    pos.push(ax+nx,y,az+nz, ax-nx,y,az-nz, bx+nx,y,bz+nz, ax-nx,y,az-nz, bx-nx,y,bz-nz, bx+nx,y,bz+nz);
    for(var q=0;q<6;q++)cols.push(col.r,col.g,col.b); } });
  var rg=new THREE.BufferGeometry(); rg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); rg.setAttribute('color',new THREE.Float32BufferAttribute(cols,3)); rg.computeVertexNormals();
- streetGroup.add(new THREE.Mesh(rg,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.96,metalness:0})));
+ streetGroup.add(new THREE.Mesh(rg,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.5,metalness:0}))); /* Ticket-09: roughness .96 -> .5 — specular sheen off the scene lights reads as wet asphalt */
  /* Ticket-08: streetlamp glow — additive points along the real road centrelines, alternating sides: pools of sodium light down every street (one draw call) */
  var lampPos=[], lampFlip=false;
  roadSegments.forEach(function(sg2){ var ax=sg2[0],ay=sg2[1],bx=sg2[2],by=sg2[3]; var len=Math.hypot(bx-ax,by-ay); if(len<20)return; var steps=Math.floor(len/26); var nx=-(by-ay)/len, ny=(bx-ax)/len;
@@ -1206,7 +1206,7 @@ function buildStreetGeometry(){
  if(lampPos.length>4200){ var thin=[]; for(var li=0;li<lampPos.length;li+=6)thin.push(lampPos[li],lampPos[li+1],lampPos[li+2]); lampPos=thin; }
  var lampCv=document.createElement('canvas'); lampCv.width=lampCv.height=64; var lg= lampCv.getContext('2d'); var grad=lg.createRadialGradient(32,32,2,32,32,30); grad.addColorStop(0,'rgba(255,190,110,1)'); grad.addColorStop(.4,'rgba(255,160,80,.45)'); grad.addColorStop(1,'rgba(255,150,60,0)'); lg.fillStyle=grad; lg.fillRect(0,0,64,64);
  var lampGeo=new THREE.BufferGeometry(); lampGeo.setAttribute('position',new THREE.Float32BufferAttribute(lampPos,3));
- var lamps=new THREE.Points(lampGeo,new THREE.PointsMaterial({size:.55,map:new THREE.CanvasTexture(lampCv),transparent:true,opacity:.5,depthWrite:false,blending:THREE.AdditiveBlending,sizeAttenuation:true,color:0xffbe78}));
+ var lamps=new THREE.Points(lampGeo,new THREE.PointsMaterial({size:.95,map:new THREE.CanvasTexture(lampCv),transparent:true,opacity:.68,depthWrite:false,blending:THREE.AdditiveBlending,sizeAttenuation:true,color:0xffbe78})); /* Ticket-09: T08 check saw no glow at .55/.5 — bigger, brighter pools */
  lamps.frustumCulled=false; streetGroup.add(lamps);
  /* buildings — one instanced box per OSM footprint bounds, so the street canyons
     around the dive point are the real footprints (collision uses the same bounds) */

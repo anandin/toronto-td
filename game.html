@@ -811,7 +811,7 @@ var simAcc=0, radioTimer=4, lastFeedStreet=0;
    tower damage dealt, gate damage taken per route, leak points per route. */
 var waveStats={wave:0,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1};
 var diveDbg={ptr:'—',click:'—',land:'—'}; /* Ticket-03: dive-pipeline witness for the dev chip — ptr = raw unproject + world metres of the last pointer event, click = the dive click point + resolveLanding kind/result, land = the final streetPos + yaw. Re-reviews #11/#12 both funnelled to one Union-area spot on the Mapbox build while the same pipeline is correct in the fallback sim; these three readings discriminate pointer vs resolver vs anchor in one live run. */
-var BUILD_TAG='T11'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
+var BUILD_TAG='T11b'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
 function resetWaveStats(){ waveStats={wave:state.wave,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1}; }
 function waveStatsLine(){ return 'sim '+waveStats.simSec.toFixed(0)+'s/wall '+waveStats.wallSec.toFixed(0)+'s · shots B'+waveStats.shots.barricade+'/S'+waveStats.shots.siren+'/M'+waveStats.shots.marksman+' · towerDmg '+Math.round(waveStats.towerDmg)+' · gateDmg '+waveStats.gateDmg.map(function(v){return Math.round(v)}).join('/')+' · leakPts '+waveStats.leakPts.map(function(v){return Math.round(v)}).join('/')+' · routed '+(waveStats.routed>=0?('R'+(waveStats.routed+1)+' '+routeNames3[waveStats.routed]):'—'); } /* Brief #9 D4: the routed column's route rides the wave line */
 
@@ -1394,17 +1394,17 @@ function buildZombies(){
  /* Ticket-11: the cone becomes a FIGURE — coat flare at the hem, shoulders hunched toward facing (vertex pass), head riding the hunch, plus a separate instanced pair of reaching arms (see updateZombieMesh). */
  var geo=new THREE.CylinderGeometry(.2,.3,1.5,9,4); geo.translate(0,.75,0);
  var gp=geo.attributes.position;
- for(var vi=0;vi<gp.count;vi++){ var vy=gp.getY(vi), tt=vy/1.5, flare=1+.28*(1-tt)*(1-tt); gp.setX(vi,gp.getX(vi)*flare); gp.setZ(vi,gp.getZ(vi)*flare-.4*tt*tt); gp.setY(vi,vy-.16*tt*tt); }
+ for(var vi=0;vi<gp.count;vi++){ var vy=gp.getY(vi), tt=vy/1.5, flare=1+.28*(1-tt)*(1-tt); gp.setX(vi,gp.getX(vi)*flare); gp.setZ(vi,gp.getZ(vi)*flare-.78*tt*tt); gp.setY(vi,vy-.3*tt*tt); } /* Ticket-11b: bend nearly doubled — the T11 check proved a .4 hunch is invisible at gameplay range; silhouettes must be exaggerated to read */
  geo.computeVertexNormals();
  var zm=new THREE.MeshStandardMaterial({roughness:.75,metalness:.02}); addRim(zm,.8);
  zombieMesh=new THREE.InstancedMesh(geo,zm,MAX_ZOMBIES);
  zombieMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); zombieMesh.count=0; scene.add(zombieMesh);
- var ag=new THREE.BoxGeometry(.1,.68,.12); ag.translate(0,-.3,0);
+ var ag=new THREE.BoxGeometry(.15,.98,.16); ag.translate(0,-.44,0); /* Ticket-11b: longer, thicker arms — same reason */
  var am=new THREE.MeshStandardMaterial({roughness:.8,metalness:.02}); addRim(am,.8);
  zombieArmMesh=new THREE.InstancedMesh(ag,am,MAX_ZOMBIES*2);
  zombieArmMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); zombieArmMesh.count=0; zombieArmMesh.frustumCulled=false; scene.add(zombieArmMesh);
  armDummy.rotation.order='YXZ';
- var hg=new THREE.SphereGeometry(.21,8,7); hg.translate(0,1.4,-.2);
+ var hg=new THREE.SphereGeometry(.27,8,7); hg.translate(0,1.3,-.34); /* Ticket-11b: bigger head, riding lower + further forward on the deeper hunch */
  var hm2=new THREE.MeshStandardMaterial({color:0xc9b189,roughness:.8,emissive:0x9dff6a,emissiveIntensity:.22}); addRim(hm2,.8);
  zombieHeadMesh=new THREE.InstancedMesh(hg,hm2,MAX_ZOMBIES);
  var bg=new THREE.CircleGeometry(.55,14); bg.rotateX(-Math.PI/2);
@@ -1437,8 +1437,8 @@ function buildTraffic(){
  var N=52; var geo=new THREE.BoxGeometry(.85,.34,1.9); geo.translate(0,.22,0);
  var cmat=new THREE.MeshStandardMaterial({roughness:.4,metalness:.35}); addRim(cmat,.3); carMesh=new THREE.InstancedMesh(geo,cmat,N);
  carMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); carMesh.frustumCulled=false; scene.add(carMesh);
- var cg2=new THREE.BoxGeometry(.68,.3,.95); cg2.translate(0,.46,-.08); /* Ticket-11: glass cabin riding the same matrix — a box with a cabin reads as a car */
- carCabinMesh=new THREE.InstancedMesh(cg2,new THREE.MeshStandardMaterial({color:0x11161d,roughness:.25,metalness:.55}),N);
+ var cg2=new THREE.BoxGeometry(.7,.4,1.15); cg2.translate(0,.5,-.08); /* Ticket-11: glass cabin riding the same matrix — a box with a cabin reads as a car. Ticket-11b: taller + lighter glass (the near-black .3 cabin was invisible on dark bodies) */
+ carCabinMesh=new THREE.InstancedMesh(cg2,new THREE.MeshStandardMaterial({color:0x39434e,roughness:.2,metalness:.6}),N);
  carCabinMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); carCabinMesh.frustumCulled=false; scene.add(carCabinMesh);
  rig.cars=[]; var palette=[0xb8c0c8,0x7a8894,0xa03a30,0x30507a,0xc8a03a,0x3a3f45,0xe8e8e8];
  var longSegs=roadSegments.filter(function(s){var dx=s[2]-s[0],dy=s[3]-s[1];return dx*dx+dy*dy>900;});
@@ -2098,7 +2098,7 @@ function updateZombieMesh(time){
   zombieMesh.setMatrixAt(count,dummy.matrix); zombieHeadMesh.setMatrixAt(count,dummy.matrix);
   if(zombieArmMesh){ var fx=-Math.sin(yaw), fz=-Math.cos(yaw), sxv=Math.cos(yaw), szv=-Math.sin(yaw);
    for(var ai=0;ai<2;ai++){ var sgn=ai?1:-1;
-    armDummy.position.set(p.x+sxv*.27*sc+fx*.05*sc, py+1.33*sc, p.z+szv*.27*sc+fz*.05*sc);
+    armDummy.position.set(p.x+sxv*.27*sc+fx*.05*sc, py+1.16*sc, p.z+szv*.27*sc+fz*.05*sc); /* Ticket-11b: shoulders sit at the deepened hunch (was 1.33 — floated above the bent back) */
     armDummy.rotation.set(.85+Math.sin(time*5.2+z.phase+ai*1.7)*.13, yaw, sgn*.14);
     armDummy.scale.setScalar(sc); armDummy.updateMatrix(); zombieArmMesh.setMatrixAt(count*2+ai,armDummy.matrix); } }
   dummy.position.y=.045; dummy.rotation.set(0,0,0); dummy.updateMatrix(); blobMesh.setMatrixAt(count,dummy.matrix);

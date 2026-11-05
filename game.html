@@ -811,7 +811,7 @@ var simAcc=0, radioTimer=4, lastFeedStreet=0;
    tower damage dealt, gate damage taken per route, leak points per route. */
 var waveStats={wave:0,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1};
 var diveDbg={ptr:'—',click:'—',land:'—'}; /* Ticket-03: dive-pipeline witness for the dev chip — ptr = raw unproject + world metres of the last pointer event, click = the dive click point + resolveLanding kind/result, land = the final streetPos + yaw. Re-reviews #11/#12 both funnelled to one Union-area spot on the Mapbox build while the same pipeline is correct in the fallback sim; these three readings discriminate pointer vs resolver vs anchor in one live run. */
-var BUILD_TAG='T09'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
+var BUILD_TAG='T10'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
 function resetWaveStats(){ waveStats={wave:state.wave,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1}; }
 function waveStatsLine(){ return 'sim '+waveStats.simSec.toFixed(0)+'s/wall '+waveStats.wallSec.toFixed(0)+'s · shots B'+waveStats.shots.barricade+'/S'+waveStats.shots.siren+'/M'+waveStats.shots.marksman+' · towerDmg '+Math.round(waveStats.towerDmg)+' · gateDmg '+waveStats.gateDmg.map(function(v){return Math.round(v)}).join('/')+' · leakPts '+waveStats.leakPts.map(function(v){return Math.round(v)}).join('/')+' · routed '+(waveStats.routed>=0?('R'+(waveStats.routed+1)+' '+routeNames3[waveStats.routed]):'—'); } /* Brief #9 D4: the routed column's route rides the wave line */
 
@@ -927,6 +927,7 @@ function initMapWorld(){
  cvs.addEventListener('webglcontextlost',function(){ health.draws=0; });
 }
 function applyBasemapStyle(){
+ qGrace=16; /* Ticket-10: ~10 s of ladder grace while the style + tiles stream in */
  setCfg('lightPreset','night'); /* Ticket-08: night from wave 1 (was dusk until wave 5) — the siege is a night op; the dark Standard basemap + its lit 3D buildings are the eagle mood Anand asked Mapbox for */
  if(health.qLevel<5)setCfg('show3dObjects',true);
  setCfg('showPointOfInterestLabels',false); setCfg('showTransitLabels',false); setCfg('showPlaceLabels',false); setCfg('showRoadLabels',false);
@@ -3012,7 +3013,7 @@ function zoomBy(factor){ /* factor>1 = dive/zoom in, factor<1 = climb/zoom out *
  var pt=new THREE.Vector3(),had=false;
  if(mapMode){ pt.copy(pointerWorld); had=!!pointerLngLat; }
  else { raycaster.setFromCamera(pointer,camera); had=raycaster.ray.intersectPlane(groundPlane,pt); }
- var old=rig.elev; rig.elev=clamp(rig.elev/factor,6.5,900);
+ var old=rig.elev; rig.elev=clamp(rig.elev/factor,6.5,700); /* Ticket-10: cap 900 -> 700 — past ~700 m the Standard style fades its own 3D and the sector reads as a flat map */
  if(had&&rig.elev<old){ var pull=1-rig.elev/old; rig.target.x+=(pt.x-rig.target.x)*pull*.55; rig.target.z+=(pt.z-rig.target.z)*pull*.55; }
  if(rig.elev<=6.6&&factor>1){ /* scroll-dive uses the same cannot-fail resolution */
   if(performance.now()<player.diveLockUntil){ rig.elev=8; showToast('Redeploy locked — '+(Math.ceil((player.diveLockUntil-performance.now())/1000))+' s.'); }
@@ -3263,7 +3264,7 @@ setInterval(function(){ var g=document.getElementById('grain'); if(g)g.style.tra
 var dashSteps=[[0,4.2,3],[0.72,4.2,2.28],[1.44,4.2,1.56],[2.16,4.2,0.84],[2.88,4.2,0.12],[3.6,3.6,0.12],[4.32,2.88,0.84],[5.04,2.16,1.56],[5.76,1.44,2.28],[6.48,0.72,3],[7.2,0,3.6]], dashIdx=0;
 setInterval(function(){ if(!map||!routesAdded||routeStreetDim)return; dashIdx=(dashIdx+1)%dashSteps.length;
  try{ map.setPaintProperty('route-ants','line-dasharray',dashSteps[dashIdx]); }catch(e){} },150);
-var qDownT=0,qUpT=0,qCool=0;
+var qDownT=0,qUpT=0,qCool=0,qGrace=0; /* Ticket-10: qGrace = ladder step-down lockout ticks after the basemap loads (streaming dips are not sustained load) */
 function qualityTick(p95){
  /* Brief #4 D5: re-review #4 reported the ladder sitting at Q5 for an entire
     2 FPS session without the picture getting lighter — whatever the rung label,
@@ -3272,7 +3273,8 @@ function qualityTick(p95){
     DOWN within ~1.2 s (3 s cooldown between steps, pixel ratio included), and
     it can only step back up after ~12 s sustained at >=45 FPS. */
  var fps=health.fps||0; qCool=Math.max(0,qCool-.6);
- if((fps>0&&fps<24)||p95>34){ qDownT+=.6; qUpT=0; if(qDownT>=1.2&&qCool<=0){ qDownT=0; qCool=3; qualityStep(1); } }
+ if(qGrace>0){ qGrace--; qDownT=0; } /* Ticket-10: grace window — no shedding while tiles stream in */
+ if((fps>0&&fps<24)||p95>34){ qDownT+=.6; qUpT=0; if(qDownT>=2.4&&qCool<=0){ qDownT=0; qCool=3; qualityStep(1); } } /* Ticket-10: step-down needs ~2.4 s sustained (was 1.2 — a single pan tripped it) */
  else if(fps>=45&&p95>0&&p95<15){ qUpT+=.6; qDownT=0; if(qUpT>=12){ qUpT=0; qualityStep(-1); } }
  else { qDownT=Math.max(0,qDownT-.3); qUpT=0; }
 }
@@ -3280,13 +3282,13 @@ function qualityStep(d){ var nl=clamp(health.qLevel+d,0,5); if(nl===health.qLeve
 function applyQuality(){ var q=health.qLevel;
  particleScale=q>=1?.5:1;
  additiveOff=q>=2;
- if(lampGlowMesh)lampGlowMesh.visible=!additiveOff;
+ if(lampGlowMesh)lampGlowMesh.visible=true; /* Ticket-10: eagle light pools are identity too — the ladder hid them from Q2 up */
  fires.forEach(function(f){ if(f.pool)f.pool.visible=f.group.visible&&!additiveOff; });
  if(map&&routesAdded){ try{ map.setPaintProperty('route-glow','line-opacity',(additiveOff||routeStreetDim)?0:.22); }catch(e){} }
  if(map&&map.setPixelRatio){ try{ map.setPixelRatio(q>=4?1:q>=3?1.25:Math.min(window.devicePixelRatio||1,1.5)); }catch(e){} }
  if(carMesh&&rig.cars)carMesh.count=q>=4?26:rig.cars.length;
  if(streetRenderer){ try{ streetRenderer.setPixelRatio(q>=4?.75:q>=2?1:Math.min(window.devicePixelRatio||1,1.25)); }catch(e){} } /* Brief #4 D5: the ladder also sheds street-renderer resolution */
- if(q>=5)setCfg('show3dObjects',false); else if(mapReady)setCfg('show3dObjects',true);
+ if(mapReady)setCfg('show3dObjects',true); /* Ticket-10: 3D buildings are the eagle's IDENTITY, never a perf shed — this q>=5 line was Anand's "starts 3D, drops to flat terrain when I move the mouse" bug */
 }
 setInterval(function(){
  var chip=document.getElementById('healthChip'); if(!chip)return;

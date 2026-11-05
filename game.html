@@ -761,7 +761,7 @@ var survivor=null, CHAR=null, crosshairEl=null;
 var raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2(),groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
 var sector, roadSegments=[], roadNames=[], buildingBounds=[], routeMeshes=[], labels=[];
 var towers=[], zombies=[], tracers=[], gates=[], fires=[], smokes=[];
-var zombieMesh, zombieHeadMesh, blobMesh, evacMesh, carMesh, lampGlowMesh, flashLight=null, dummy=new THREE.Object3D(), colorTmp=new THREE.Color();
+var zombieMesh, zombieHeadMesh, blobMesh, evacMesh, carMesh, lampGlowMesh, flashLight=null, dummy=new THREE.Object3D(), colorTmp=new THREE.Color(), zombieArmMesh, carCabinMesh, armDummy=new THREE.Object3D();
 var selectedTowerType=null, selectedTower=null, zombieSeq=0;
 var towerDefs={
  barricade:{name:'Intersection Barricade',cost:60,range:90,damage:20,rate:.60,refund:42,hull:90,desc:'Single-target road control. Damages and slows one infected.'}, /* Brief #8 D2 retune (was 14 / .68 in #7): a lone barricade at a route chokepoint must two-shot a walker inside the fast march transit — at 14 dmg it killed ~1 per column and mid-route placements leaked 26–30 pts on wave 2 in the D1 placement audit */
@@ -811,7 +811,7 @@ var simAcc=0, radioTimer=4, lastFeedStreet=0;
    tower damage dealt, gate damage taken per route, leak points per route. */
 var waveStats={wave:0,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1};
 var diveDbg={ptr:'—',click:'—',land:'—'}; /* Ticket-03: dive-pipeline witness for the dev chip — ptr = raw unproject + world metres of the last pointer event, click = the dive click point + resolveLanding kind/result, land = the final streetPos + yaw. Re-reviews #11/#12 both funnelled to one Union-area spot on the Mapbox build while the same pipeline is correct in the fallback sim; these three readings discriminate pointer vs resolver vs anchor in one live run. */
-var BUILD_TAG='T10'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
+var BUILD_TAG='T11'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
 function resetWaveStats(){ waveStats={wave:state.wave,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1}; }
 function waveStatsLine(){ return 'sim '+waveStats.simSec.toFixed(0)+'s/wall '+waveStats.wallSec.toFixed(0)+'s · shots B'+waveStats.shots.barricade+'/S'+waveStats.shots.siren+'/M'+waveStats.shots.marksman+' · towerDmg '+Math.round(waveStats.towerDmg)+' · gateDmg '+waveStats.gateDmg.map(function(v){return Math.round(v)}).join('/')+' · leakPts '+waveStats.leakPts.map(function(v){return Math.round(v)}).join('/')+' · routed '+(waveStats.routed>=0?('R'+(waveStats.routed+1)+' '+routeNames3[waveStats.routed]):'—'); } /* Brief #9 D4: the routed column's route rides the wave line */
 
@@ -1099,6 +1099,7 @@ function buildCharacter(){
  var skin=new THREE.MeshStandardMaterial({color:0xc9976f,roughness:.75});
  var capM=new THREE.MeshStandardMaterial({color:0x2e3a40,roughness:.85});
  var packM=new THREE.MeshStandardMaterial({color:0x44554a,roughness:.9});
+ var stripeM=new THREE.MeshStandardMaterial({color:0xd8dde2,roughness:.35,metalness:.6,emissive:0x8a929c,emissiveIntensity:.35}); /* Ticket-11: hi-vis band material */
  var darkM=new THREE.MeshStandardMaterial({color:0x14181c,roughness:.55,metalness:.45});
  function part(geo,mat,x,y,z,parent){ var m=new THREE.Mesh(geo,mat); m.position.set(x,y-.92,z); (parent||inner).add(m); return m; }
  function limb(x,y,z,w,h,d,mat){ var g=new THREE.Group(); g.position.set(x,y-.92,z); var m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.y=-h/2+.05; g.add(m); inner.add(g); return g; }
@@ -1109,6 +1110,8 @@ function buildCharacter(){
  part(new THREE.BoxGeometry(.3,.36,.06),darkM,0,1.28,-.17); /* chest rig */
  part(new THREE.BoxGeometry(.36,.46,.18),packM,0,1.3,.24); /* backpack */
  var roll=part(new THREE.CylinderGeometry(.07,.07,.38,8),capM,0,1.6,.24); roll.rotation.z=Math.PI/2;
+ part(new THREE.BoxGeometry(.49,.08,.3),stripeM,0,1.4,0); /* Ticket-11: reflective band across the jacket */
+ part(new THREE.BoxGeometry(.3,.2,.16),capM,0,1.58,.12); /* Ticket-11: hood resting behind the neck */
  /* head + cap (brim faces -Z, the character's forward) */
  CHAR.head=new THREE.Group(); CHAR.head.position.set(0,1.66-.92,0); inner.add(CHAR.head);
  var hm=new THREE.Mesh(new THREE.BoxGeometry(.25,.27,.25),skin); hm.position.y=.04; CHAR.head.add(hm);
@@ -1388,11 +1391,20 @@ function buildGates(){
  });
 }
 function buildZombies(){
- var geo=new THREE.CylinderGeometry(.25,.36,1.3,6); geo.translate(0,.65,0);
+ /* Ticket-11: the cone becomes a FIGURE — coat flare at the hem, shoulders hunched toward facing (vertex pass), head riding the hunch, plus a separate instanced pair of reaching arms (see updateZombieMesh). */
+ var geo=new THREE.CylinderGeometry(.2,.3,1.5,9,4); geo.translate(0,.75,0);
+ var gp=geo.attributes.position;
+ for(var vi=0;vi<gp.count;vi++){ var vy=gp.getY(vi), tt=vy/1.5, flare=1+.28*(1-tt)*(1-tt); gp.setX(vi,gp.getX(vi)*flare); gp.setZ(vi,gp.getZ(vi)*flare-.4*tt*tt); gp.setY(vi,vy-.16*tt*tt); }
+ geo.computeVertexNormals();
  var zm=new THREE.MeshStandardMaterial({roughness:.75,metalness:.02}); addRim(zm,.8);
  zombieMesh=new THREE.InstancedMesh(geo,zm,MAX_ZOMBIES);
  zombieMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); zombieMesh.count=0; scene.add(zombieMesh);
- var hg=new THREE.SphereGeometry(.21,8,7); hg.translate(0,1.48,0);
+ var ag=new THREE.BoxGeometry(.1,.68,.12); ag.translate(0,-.3,0);
+ var am=new THREE.MeshStandardMaterial({roughness:.8,metalness:.02}); addRim(am,.8);
+ zombieArmMesh=new THREE.InstancedMesh(ag,am,MAX_ZOMBIES*2);
+ zombieArmMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); zombieArmMesh.count=0; zombieArmMesh.frustumCulled=false; scene.add(zombieArmMesh);
+ armDummy.rotation.order='YXZ';
+ var hg=new THREE.SphereGeometry(.21,8,7); hg.translate(0,1.4,-.2);
  var hm2=new THREE.MeshStandardMaterial({color:0xc9b189,roughness:.8,emissive:0x9dff6a,emissiveIntensity:.22}); addRim(hm2,.8);
  zombieHeadMesh=new THREE.InstancedMesh(hg,hm2,MAX_ZOMBIES);
  var bg=new THREE.CircleGeometry(.55,14); bg.rotateX(-Math.PI/2);
@@ -1425,6 +1437,9 @@ function buildTraffic(){
  var N=52; var geo=new THREE.BoxGeometry(.85,.34,1.9); geo.translate(0,.22,0);
  var cmat=new THREE.MeshStandardMaterial({roughness:.4,metalness:.35}); addRim(cmat,.3); carMesh=new THREE.InstancedMesh(geo,cmat,N);
  carMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); carMesh.frustumCulled=false; scene.add(carMesh);
+ var cg2=new THREE.BoxGeometry(.68,.3,.95); cg2.translate(0,.46,-.08); /* Ticket-11: glass cabin riding the same matrix — a box with a cabin reads as a car */
+ carCabinMesh=new THREE.InstancedMesh(cg2,new THREE.MeshStandardMaterial({color:0x11161d,roughness:.25,metalness:.55}),N);
+ carCabinMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); carCabinMesh.frustumCulled=false; scene.add(carCabinMesh);
  rig.cars=[]; var palette=[0xb8c0c8,0x7a8894,0xa03a30,0x30507a,0xc8a03a,0x3a3f45,0xe8e8e8];
  var longSegs=roadSegments.filter(function(s){var dx=s[2]-s[0],dy=s[3]-s[1];return dx*dx+dy*dy>900;});
  for(var i=0;i<N;i++){ var s=longSegs[(Math.random()*longSegs.length)|0]; if(!s)s=[0,0,50,0];
@@ -1649,11 +1664,11 @@ function updateCommotion(now,dt){
    var dx=bx-ax,dz=bz-az,len=Math.hypot(dx,dz)||1,nx=-dz/len,nz=dx/len;
    dummy.position.set(ax+dx*c.t+nx*c.lane,0,az+dz*c.t+nz*c.lane);
    dummy.rotation.set(0,Math.atan2(dx*c.dir,dz*c.dir),0); dummy.scale.set(1,1,1); dummy.updateMatrix();
-   carMesh.setMatrixAt(i,dummy.matrix); colorTmp.setHex(c.emerg?0xe8e8e8:c.col); carMesh.setColorAt(i,colorTmp);
+   carMesh.setMatrixAt(i,dummy.matrix); if(carCabinMesh)carCabinMesh.setMatrixAt(i,dummy.matrix); colorTmp.setHex(c.emerg?0xe8e8e8:c.col); carMesh.setColorAt(i,colorTmp);
    if(c.emerg){ var b=rig.beacons[i-46]; if(b){ b.position.copy(dummy.position); b.position.y=.75;
      var ph=(Math.floor(t*1.5)+i)%2===0; b.material.color.setHex(ph?0xff2030:0x2060ff); b.material.opacity=ph?.95:.6; } }
   });
-  carMesh.count=rig.cars.length; carMesh.instanceMatrix.needsUpdate=true; if(carMesh.instanceColor)carMesh.instanceColor.needsUpdate=true; }
+  carMesh.count=rig.cars.length; carMesh.instanceMatrix.needsUpdate=true; if(carMesh.instanceColor)carMesh.instanceColor.needsUpdate=true; if(carCabinMesh){ carCabinMesh.count=carMesh.count; carCabinMesh.instanceMatrix.needsUpdate=true; } }
  /* fires flicker */
  fires.forEach(function(f){ if(!f.group.visible)return; var s=1+Math.sin(t*13+f.ph)*.16+Math.sin(t*29+f.ph*2)*.08;
   f.flame.scale.set(1.6*s,2.4*(2-s)*.9+0.7,1); f.glow.material.opacity=.4+Math.sin(t*17+f.ph)*.14;
@@ -2073,14 +2088,27 @@ function updateZombieMesh(time){
  zombies.forEach(function(z){ if(!z.alive||count>=MAX_ZOMBIES)return; var p=zombiePos(z),def=zombieDefs[z.type];
   /* Brief #3 D2: in Mapbox street mode entities render at true scale (WORLD) so the 2.2 m free camera frames a street fight, not giants floating metres up */
   var ms=(mapMode&&!rig.hybrid&&(rig.mode==='street'||rig.mode==='diving'||rig.mode==='ascending'))?WORLD:1; /* hybrid street renders at local world scale (ms=1) — the WORLD rescale belonged to the retired Mapbox free camera */
+  /* Ticket-11: real heading from actual movement (mesh yaw was z.phase — a fixed random angle; invisible on a cone, fatal on a hunched figure with arms) */
+  if(z._lx===undefined){ z._lx=p.x; z._lz=p.z; z._yaw=z.phase; }
+  var mdx=p.x-z._lx, mdz=p.z-z._lz;
+  if(mdx*mdx+mdz*mdz>4e-4){ z._yaw=angleTurn(z._yaw,Math.atan2(-mdx,-mdz),.4); z._lx=p.x; z._lz=p.z; }
+  var yaw=z._yaw, sc=def.scale*(z.leader?1.18:1)*ms*glyphBoost;
   dummy.position.copy(p); var py=ms<1?.02+Math.abs(Math.sin(time*5.2+z.phase))*.01:.3+Math.abs(Math.sin(time*5.2+z.phase))*.13+(z.chewing?Math.sin(time*22)*.05:0); dummy.position.y=py;
-  dummy.scale.setScalar(def.scale*(z.leader?1.18:1)*ms*glyphBoost); dummy.rotation.set(Math.sin(time*3.1+z.phase)*.07,z.phase,Math.sin(time*4.3+z.phase)*.16); dummy.updateMatrix();
+  dummy.scale.setScalar(sc); dummy.rotation.set(Math.sin(time*3.1+z.phase)*.07,yaw,Math.sin(time*4.3+z.phase)*.16); dummy.updateMatrix();
   zombieMesh.setMatrixAt(count,dummy.matrix); zombieHeadMesh.setMatrixAt(count,dummy.matrix);
+  if(zombieArmMesh){ var fx=-Math.sin(yaw), fz=-Math.cos(yaw), sxv=Math.cos(yaw), szv=-Math.sin(yaw);
+   for(var ai=0;ai<2;ai++){ var sgn=ai?1:-1;
+    armDummy.position.set(p.x+sxv*.27*sc+fx*.05*sc, py+1.33*sc, p.z+szv*.27*sc+fz*.05*sc);
+    armDummy.rotation.set(.85+Math.sin(time*5.2+z.phase+ai*1.7)*.13, yaw, sgn*.14);
+    armDummy.scale.setScalar(sc); armDummy.updateMatrix(); zombieArmMesh.setMatrixAt(count*2+ai,armDummy.matrix); } }
   dummy.position.y=.045; dummy.rotation.set(0,0,0); dummy.updateMatrix(); blobMesh.setMatrixAt(count,dummy.matrix);
-  dummy.position.y=py; dummy.rotation.y=z.phase;
+  dummy.position.y=py; dummy.rotation.y=yaw;
   colorTmp.setHex(z.leader?0xd9a441:z.courier?0x7ad0ff:def.color); if(z.hp<z.maxHp*.35)colorTmp.lerp(new THREE.Color(0x701f18),.45);
-  zombieMesh.setColorAt(count,colorTmp); count++; });
- zombieMesh.count=count; zombieHeadMesh.count=count; if(blobMesh){ blobMesh.count=count; blobMesh.instanceMatrix.needsUpdate=true; }
+  zombieMesh.setColorAt(count,colorTmp);
+  if(zombieArmMesh){ colorTmp.multiplyScalar(.72); zombieArmMesh.setColorAt(count*2,colorTmp); zombieArmMesh.setColorAt(count*2+1,colorTmp); }
+  count++; });
+ zombieMesh.count=count; zombieHeadMesh.count=count; if(zombieArmMesh){ zombieArmMesh.count=count*2; zombieArmMesh.instanceMatrix.needsUpdate=true; if(zombieArmMesh.instanceColor)zombieArmMesh.instanceColor.needsUpdate=true; }
+ if(blobMesh){ blobMesh.count=count; blobMesh.instanceMatrix.needsUpdate=true; }
  zombieMesh.instanceMatrix.needsUpdate=true; zombieHeadMesh.instanceMatrix.needsUpdate=true;
  if(zombieMesh.instanceColor)zombieMesh.instanceColor.needsUpdate=true;
 }

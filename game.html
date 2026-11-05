@@ -802,6 +802,7 @@ var simAcc=0, radioTimer=4, lastFeedStreet=0;
    tower damage dealt, gate damage taken per route, leak points per route. */
 var waveStats={wave:0,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1};
 var diveDbg={ptr:'—',click:'—',land:'—'}; /* Ticket-03: dive-pipeline witness for the dev chip — ptr = raw unproject + world metres of the last pointer event, click = the dive click point + resolveLanding kind/result, land = the final streetPos + yaw. Re-reviews #11/#12 both funnelled to one Union-area spot on the Mapbox build while the same pipeline is correct in the fallback sim; these three readings discriminate pointer vs resolver vs anchor in one live run. */
+var BUILD_TAG='T04-733ef04'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
 function resetWaveStats(){ waveStats={wave:state.wave,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1}; }
 function waveStatsLine(){ return 'sim '+waveStats.simSec.toFixed(0)+'s/wall '+waveStats.wallSec.toFixed(0)+'s · shots B'+waveStats.shots.barricade+'/S'+waveStats.shots.siren+'/M'+waveStats.shots.marksman+' · towerDmg '+Math.round(waveStats.towerDmg)+' · gateDmg '+waveStats.gateDmg.map(function(v){return Math.round(v)}).join('/')+' · leakPts '+waveStats.leakPts.map(function(v){return Math.round(v)}).join('/')+' · routed '+(waveStats.routed>=0?('R'+(waveStats.routed+1)+' '+routeNames3[waveStats.routed]):'—'); } /* Brief #9 D4: the routed column's route rides the wave line */
 
@@ -3239,7 +3240,7 @@ setInterval(function(){
  var avg=sorted.length?sorted.reduce(function(a,b){return a+b;},0)/sorted.length:0;
  health.fps=avg?Math.round(1000/avg):0; health.p95=p95;
  updateMapStatus();
- chip.textContent='MAP LOADS '+mapLoadCount+' · '+(mapMode?'MAPBOX':'LOCAL')+' · '+health.fps+' FPS · P95 '+p95.toFixed(1)+' MS · DRAWS '+(health.draws||0)+' · TILES '+(mapMode?(tilesReady?'LOADED':'LOADING'):'—')+' · Q'+health.qLevel
+ chip.textContent='BUILD '+BUILD_TAG+' · MAP LOADS '+mapLoadCount+' · '+(mapMode?'MAPBOX':'LOCAL')+' · '+health.fps+' FPS · P95 '+p95.toFixed(1)+' MS · DRAWS '+(health.draws||0)+' · TILES '+(mapMode?(tilesReady?'LOADED':'LOADING'):'—')+' · Q'+health.qLevel
   +' · WAVE '+waveStats.wave+' '+waveStatsLine() /* Brief #8 D1: the live counters, on the dev panel next to the FPS readout they exonerate or indict */
   +' · DIVE '+(rig._diveScored?('kind '+rig._diveScored.kind+' (road-anchored) · los log '+fmtClear(rig._diveScored.clear)+' m'):'—') /* Brief #9 D2: the clear-ray is a LOG line only ("los log") — the spawn is road-anchored, no ray is scored or gated */
   +' · PTD '+diveDbg.ptr+' | '+diveDbg.click+' | '+diveDbg.land /* Ticket-03 witness (see diveDbg declaration) */

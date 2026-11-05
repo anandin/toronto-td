@@ -193,6 +193,11 @@
     .street-btns button { pointer-events:auto; border:1px solid var(--line); background:var(--glass); backdrop-filter:blur(10px); box-shadow:var(--shadow); border-radius:7px; padding:12px 14px; cursor:pointer; font:700 12px/1 "IBM Plex Mono",monospace; letter-spacing:.05em; }
     #fireBtn { display:none; width:84px; height:84px; border-radius:50%; background:rgba(178,47,38,.85); color:#fff; border-color:rgba(255,140,120,.6); font-size:14px; }
     @media (pointer:coarse) { #fireBtn { display:block; } .player-plate { bottom:210px; } }
+    /* Ticket-07: touch movement + utility buttons (coarse pointers only, inside street HUD) */
+    #joy { position:absolute; left:16px; bottom:118px; width:118px; height:118px; border-radius:50%; border:2px solid rgba(255,255,255,.35); background:rgba(10,18,22,.4); display:none; pointer-events:auto; touch-action:none; z-index:7; }
+    #joyKnob { position:absolute; left:50%; top:50%; width:52px; height:52px; border-radius:50%; background:rgba(255,255,255,.28); border:2px solid rgba(255,255,255,.5); transform:translate(-50%,-50%); pointer-events:none; }
+    #rollBtn, #reloadBtn { display:none; }
+    @media (pointer:coarse) { #joy { display:block; } #rollBtn, #reloadBtn { display:block; } }
     #dmgLayer { position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:3; }
     .dmg-num { position:absolute; transform:translate(-50%,-50%); font:700 15px/1 "IBM Plex Mono",monospace; color:#fff; text-shadow:0 2px 8px #000, 0 0 2px #000; white-space:nowrap; }
     .dmg-num.weak { color:#ffd27a; font-size:19px; }
@@ -540,7 +545,10 @@
     </div>
     <div id="ascendRing"><span>ASCEND</span></div>
     <div id="downChip">OPERATOR DOWN — REDEPLOYING AT UNION STATION</div>
+    <div id="joy"><div id="joyKnob"></div></div>
     <div class="street-btns">
+      <button id="rollBtn">ROLL</button>
+      <button id="reloadBtn">RELOAD</button>
       <button id="fireBtn">FIRE</button>
     </div>
   </div>
@@ -803,7 +811,7 @@ var simAcc=0, radioTimer=4, lastFeedStreet=0;
    tower damage dealt, gate damage taken per route, leak points per route. */
 var waveStats={wave:0,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1};
 var diveDbg={ptr:'—',click:'—',land:'—'}; /* Ticket-03: dive-pipeline witness for the dev chip — ptr = raw unproject + world metres of the last pointer event, click = the dive click point + resolveLanding kind/result, land = the final streetPos + yaw. Re-reviews #11/#12 both funnelled to one Union-area spot on the Mapbox build while the same pipeline is correct in the fallback sim; these three readings discriminate pointer vs resolver vs anchor in one live run. */
-var BUILD_TAG='T05'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
+var BUILD_TAG='T07'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
 function resetWaveStats(){ waveStats={wave:state.wave,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1}; }
 function waveStatsLine(){ return 'sim '+waveStats.simSec.toFixed(0)+'s/wall '+waveStats.wallSec.toFixed(0)+'s · shots B'+waveStats.shots.barricade+'/S'+waveStats.shots.siren+'/M'+waveStats.shots.marksman+' · towerDmg '+Math.round(waveStats.towerDmg)+' · gateDmg '+waveStats.gateDmg.map(function(v){return Math.round(v)}).join('/')+' · leakPts '+waveStats.leakPts.map(function(v){return Math.round(v)}).join('/')+' · routed '+(waveStats.routed>=0?('R'+(waveStats.routed+1)+' '+routeNames3[waveStats.routed]):'—'); } /* Brief #9 D4: the routed column's route rides the wave line */
 
@@ -2821,6 +2829,7 @@ function updateStreetMove(dt){
  rig.charMoving=false; rig.charSprinting=false;
  if(player.dead){ rig.charSpeed=0; return; }
  var f=0,s=0; if(keys.KeyW)f+=1; if(keys.KeyS)f-=1; if(keys.KeyD)s+=1; if(keys.KeyA)s-=1;
+ f=clamp(f+joyVec.f,-1,1); s=clamp(s+joyVec.s,-1,1); /* Ticket-07: joystick joins the same axes */
  var sin=Math.sin(rig.streetYaw),cos=Math.cos(rig.streetYaw);
  var mx=0,mz=0,hasInput=!!(f||s);
  if(hasInput){ mx=(-sin*f+cos*s); mz=(-cos*f-sin*s); var ml=Math.hypot(mx,mz)||1; mx/=ml; mz/=ml; }
@@ -2842,7 +2851,7 @@ function updateStreetMove(dt){
 function doRoll(){
  var now=performance.now();
  if(rig.mode!=='street'||player.dead||now<player.rollCdUntil||now<player.rollUntil)return;
- var f=0,s=0; if(keys.KeyW)f+=1; if(keys.KeyS)f-=1; if(keys.KeyD)s+=1; if(keys.KeyA)s-=1;
+ var f=0,s=0; if(keys.KeyW)f+=1; if(keys.KeyS)f-=1; if(keys.KeyD)s+=1; if(keys.KeyA)s-=1; f+=joyVec.f; s+=joyVec.s;
  var dx,dz;
  if(f||s){ var sin=Math.sin(rig.streetYaw),cos=Math.cos(rig.streetYaw); dx=(-sin*f+cos*s); dz=(-cos*f-sin*s); var ml=Math.hypot(dx,dz)||1; dx/=ml; dz/=ml; }
  else { dx=-Math.sin(player.faceYaw); dz=-Math.cos(player.faceYaw); }
@@ -2951,7 +2960,14 @@ function handleMapClick(e){
   var clickPt=null;
   if(mapMode)clickPt=pointerWorld;
   else { raycaster.setFromCamera(pointer,camera); var cp=new THREE.Vector3(); if(raycaster.ray.intersectPlane(groundPlane,cp))clickPt=cp; }
-  var _res=resolveLanding(clickPt||rig.target.clone()); if(clickPt)diveDbg.click='click '+Math.round(clickPt.x/WORLD)+','+Math.round(-clickPt.z/WORLD)+' kind '+_res.kind+' res '+Math.round(_res.point.x/WORLD)+','+Math.round(-_res.point.z/WORLD); beginDiveAt(_res); return; }
+  var _res=resolveLanding(clickPt||rig.target.clone()); if(clickPt)diveDbg.click='click '+Math.round(clickPt.x/WORLD)+','+Math.round(-clickPt.z/WORLD)+' kind '+_res.kind+' res '+Math.round(_res.point.x/WORLD)+','+Math.round(-_res.point.z/WORLD);
+  if(e.pointerType==='touch'){ /* Ticket-07: no hover on a phone — first tap PREVIEWS the named landing (marker + toast), second tap on the same spot commits the dive */
+   if(_res.kind==='centre'){ showToast('No clear road near your tap — pick another spot'); return; }
+   var _nowT=performance.now();
+   if(tapPreview&&_nowT<tapPreview.until&&Math.hypot(_res.point.x-tapPreview.point.x,_res.point.z-tapPreview.point.z)<1.2){ var _pv=tapPreview; tapPreview=null; beginDiveAt(_pv.res); return; }
+   tapPreview={res:_res,point:_res.point,until:_nowT+4500}; updateReticle();
+   showToast('Landing: '+((nearestRoadName(_res.point)||'STREET').toUpperCase())+' — tap there again to dive'); return; }
+  beginDiveAt(_res); return; }
  if(mapMode){ var rct=viewEl().getBoundingClientRect(), th=null, td=34;
   towers.forEach(function(t){ var sp=projectToScreen(t.group.position); var d=Math.hypot(sp.x-(e.clientX-rct.left),sp.y-(e.clientY-rct.top)); if(d<td){td=d;th=t;} });
   if(th){ selectTower(th); return; } placeTower(pointerWorld.clone()); return; }
@@ -2993,6 +3009,8 @@ function onWheel(e){ e.preventDefault(); SFX.resume(); setPointer(e); zoomBy(Mat
    at any threshold ambiguity the resolution is NOT firing. */
 var streetDownAt=null;
 var streetFirstClick=true; /* Ticket-04: the first canvas press after entering street mode grabs aim/pointer-lock and never fires (re-review #12: the lock-aim click discharged the rifle) */
+var joyVec={f:0,s:0}; /* Ticket-07: virtual joystick input, folded into the same f/s axes as WASD in updateStreetMove/doRoll */
+var tapPreview=null; /* Ticket-07: touch dive preview — {res, point, until} armed by the first tap, committed by the second */
 function onMouseDown(e){
  SFX.resume();
  if(rig.mode==='street'){
@@ -3057,6 +3075,15 @@ function bindUI(){
  document.getElementById('ascendFixed').addEventListener('click',function(){ beginAscend(true); });
  document.getElementById('fireBtn').addEventListener('touchstart',function(e){ e.preventDefault(); tryFire(false); },{passive:false});
  document.getElementById('fireBtn').addEventListener('click',function(){ if(performance.now()-(player.lastFireAt||0)>450)tryFire(false); });
+ /* Ticket-07: joystick + roll/reload touch controls */
+ document.getElementById('rollBtn').addEventListener('click',function(){ doRoll(); });
+ document.getElementById('reloadBtn').addEventListener('click',function(){ startReload(); });
+ var joyEl=document.getElementById('joy'), joyKnob=document.getElementById('joyKnob'), joyPid=null;
+ function joySet(e){ var r=joyEl.getBoundingClientRect(); var dx=e.clientX-(r.left+r.width/2), dy=e.clientY-(r.top+r.height/2); var max=Math.max(10,r.width/2-6); var d=Math.hypot(dx,dy); if(d>max){ dx*=max/d; dy*=max/d; } joyKnob.style.transform='translate(calc(-50% + '+dx+'px), calc(-50% + '+dy+'px))'; var nx=dx/max, ny=dy/max, dead=.22; joyVec.s=Math.abs(nx)<dead?0:nx; joyVec.f=Math.abs(ny)<dead?0:-ny; }
+ function joyEnd(e){ if(joyPid===e.pointerId){ joyPid=null; joyVec.f=0; joyVec.s=0; joyKnob.style.transform='translate(-50%,-50%)'; } }
+ joyEl.addEventListener('pointerdown',function(e){ joyPid=e.pointerId; if(joyEl.setPointerCapture)joyEl.setPointerCapture(joyPid); joySet(e); e.preventDefault(); });
+ joyEl.addEventListener('pointermove',function(e){ if(joyPid===e.pointerId)joySet(e); });
+ joyEl.addEventListener('pointerup',joyEnd); joyEl.addEventListener('pointercancel',joyEnd);
  document.getElementById('speedBtn').addEventListener('click',function(){ state.speed=state.speed===1?2:1; this.textContent=state.speed+'× speed'; this.classList.toggle('active',state.speed===2); });
  document.getElementById('pauseBtn').addEventListener('click',function(){ togglePause(); });
  document.getElementById('soundBtn').addEventListener('click',function(){ SFX.init(); SFX.on=!SFX.on; if(SFX.on)SFX.resume(); this.textContent=SFX.on?'Sound on':'Sound off'; this.classList.toggle('active',SFX.on); });

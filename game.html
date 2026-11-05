@@ -417,14 +417,15 @@
     .last-hit { margin-top:9px; padding-top:7px; border-top:1px dashed var(--line); font:700 11px/1.3 "IBM Plex Mono",monospace; letter-spacing:.06em; color:var(--amber-soft); min-height:15px; }
     /* ---- fix brief #8 D5: eagle walker DOM glyphs (<= 80 m) + impact ring ---- */
     /* ---- fix brief #9 D3: glyphs now live INSIDE #eagleFx, on the bolt layer — the separate #walkerGlyphs layer is gone ---- */
-    .w-glyph { position:absolute; width:20px; height:24px; transform:translate(-50%,-92%); display:none; }
-    .w-glyph i { display:block; width:13px; height:13px; margin:0 auto; border-radius:50%; background:#a9c45b; border:2px solid rgba(2,8,10,.85); box-shadow:0 0 7px rgba(0,0,0,.85), 0 0 5px rgba(255,80,60,.45); }
-    .w-glyph.tank i { width:15px; height:15px; }
-    .w-glyph.leader i { width:15px; height:15px; border-color:#ffd27a; box-shadow:0 0 11px rgba(255,176,58,.95), 0 0 5px rgba(0,0,0,.8); }
-    .w-glyph b { display:block; height:4px; margin-top:2px; background:rgba(0,0,0,.8); border:1px solid rgba(255,255,255,.6); }
+    .w-glyph { position:absolute; width:26px; height:30px; transform:translate(-50%,-92%); display:none; }
+    .w-glyph i { display:block; width:18px; height:18px; margin:0 auto; border-radius:50%; background:#a9c45b; border:2px solid rgba(2,8,10,.9); outline:1px solid rgba(255,255,255,.75); box-shadow:0 0 7px rgba(0,0,0,.85); }
+    .w-glyph.runner i { border-radius:4px; transform:rotate(45deg); } /* Ticket-05: shape language — walker = circle, runner = diamond, tank = square; shape reads at screenshot scale where hue alone washed out (testers kept reporting "small red dots") */
+    .w-glyph.tank i { width:22px; height:22px; border-radius:5px; }
+    .w-glyph.leader i { width:22px; height:22px; border-color:#ffd27a; box-shadow:0 0 11px rgba(255,176,58,.95), 0 0 5px rgba(0,0,0,.8); }
+    .w-glyph b { display:block; height:5px; margin-top:2px; background:rgba(0,0,0,.8); border:1px solid rgba(255,255,255,.6); }
     .w-glyph b u { display:block; height:100%; background:#7ee85a; }
     .w-glyph em { display:none; font:700 10px/1 "IBM Plex Mono",monospace; font-style:normal; color:#fff; text-align:center; margin-top:2px; text-shadow:0 1px 3px #000, 0 0 2px #000; }
-    .w-glyph.cluster i { width:17px; height:17px; background:#5a1f1a; }
+    .w-glyph.cluster i { width:22px; height:22px; background:#5a1f1a; }
     /* ---- fix brief #9 D1: ascend hint on the street HUD ---- */
     #ascendHint { position:absolute; left:50%; transform:translateX(-50%); bottom:166px; padding:6px 11px; border-radius:4px; border:1px solid rgba(255,192,106,.4); background:rgba(3,12,16,.72); color:var(--amber-soft); font:600 10px/1 "IBM Plex Mono",monospace; letter-spacing:.07em; white-space:nowrap; }
     .efx-ring { position:absolute; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; border:2px solid #ffd27a; box-shadow:0 0 10px rgba(255,180,80,.55); }
@@ -802,7 +803,7 @@ var simAcc=0, radioTimer=4, lastFeedStreet=0;
    tower damage dealt, gate damage taken per route, leak points per route. */
 var waveStats={wave:0,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1};
 var diveDbg={ptr:'—',click:'—',land:'—'}; /* Ticket-03: dive-pipeline witness for the dev chip — ptr = raw unproject + world metres of the last pointer event, click = the dive click point + resolveLanding kind/result, land = the final streetPos + yaw. Re-reviews #11/#12 both funnelled to one Union-area spot on the Mapbox build while the same pipeline is correct in the fallback sim; these three readings discriminate pointer vs resolver vs anchor in one live run. */
-var BUILD_TAG='T04-733ef04'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
+var BUILD_TAG='T05'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
 function resetWaveStats(){ waveStats={wave:state.wave,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1}; }
 function waveStatsLine(){ return 'sim '+waveStats.simSec.toFixed(0)+'s/wall '+waveStats.wallSec.toFixed(0)+'s · shots B'+waveStats.shots.barricade+'/S'+waveStats.shots.siren+'/M'+waveStats.shots.marksman+' · towerDmg '+Math.round(waveStats.towerDmg)+' · gateDmg '+waveStats.gateDmg.map(function(v){return Math.round(v)}).join('/')+' · leakPts '+waveStats.leakPts.map(function(v){return Math.round(v)}).join('/')+' · routed '+(waveStats.routed>=0?('R'+(waveStats.routed+1)+' '+routeNames3[waveStats.routed]):'—'); } /* Brief #9 D4: the routed column's route rides the wave line */
 
@@ -1569,7 +1570,7 @@ function updateWalkerGlyphs(){
  function drawOne(v){ var g=nextGlyph(), z=v.z, def=zombieDefs[z.type];
   g.el.style.display='block'; g.el.style.left=v.x+'px'; g.el.style.top=v.y+'px';
   g.el.className='w-glyph '+z.type+(z.leader?' leader':'');
-  g.dot.style.background='#'+def.color.toString(16).padStart(6,'0'); g.tag.style.display='none';
+  g.dot.style.background='#'+def.color.toString(16).padStart(6,'0'); g.dot.style.boxShadow='0 0 7px rgba(0,0,0,.85), 0 0 10px #'+def.color.toString(16).padStart(6,'0'); g.tag.style.display='none'; /* Ticket-05: the glow carries the TYPE colour — the old universal red glow made every glyph read as a red dot */
   var f=clamp(z.hp/z.maxHp,0,1); g.bar.style.width=(f*100)+'%'; g.bar.style.background=f<.35?'#ff574d':'#7ee85a'; }
  if(rig.mode==='eagle'&&rig.elev<=80){
   var vis=[];

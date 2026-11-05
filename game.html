@@ -811,7 +811,7 @@ var simAcc=0, radioTimer=4, lastFeedStreet=0;
    tower damage dealt, gate damage taken per route, leak points per route. */
 var waveStats={wave:0,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1};
 var diveDbg={ptr:'—',click:'—',land:'—'}; /* Ticket-03: dive-pipeline witness for the dev chip — ptr = raw unproject + world metres of the last pointer event, click = the dive click point + resolveLanding kind/result, land = the final streetPos + yaw. Re-reviews #11/#12 both funnelled to one Union-area spot on the Mapbox build while the same pipeline is correct in the fallback sim; these three readings discriminate pointer vs resolver vs anchor in one live run. */
-var BUILD_TAG='T07'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
+var BUILD_TAG='T08'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
 function resetWaveStats(){ waveStats={wave:state.wave,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1}; }
 function waveStatsLine(){ return 'sim '+waveStats.simSec.toFixed(0)+'s/wall '+waveStats.wallSec.toFixed(0)+'s · shots B'+waveStats.shots.barricade+'/S'+waveStats.shots.siren+'/M'+waveStats.shots.marksman+' · towerDmg '+Math.round(waveStats.towerDmg)+' · gateDmg '+waveStats.gateDmg.map(function(v){return Math.round(v)}).join('/')+' · leakPts '+waveStats.leakPts.map(function(v){return Math.round(v)}).join('/')+' · routed '+(waveStats.routed>=0?('R'+(waveStats.routed+1)+' '+routeNames3[waveStats.routed]):'—'); } /* Brief #9 D4: the routed column's route rides the wave line */
 
@@ -927,7 +927,7 @@ function initMapWorld(){
  cvs.addEventListener('webglcontextlost',function(){ health.draws=0; });
 }
 function applyBasemapStyle(){
- setCfg('lightPreset',state.wave>=5?'night':'dusk');
+ setCfg('lightPreset','night'); /* Ticket-08: night from wave 1 (was dusk until wave 5) — the siege is a night op; the dark Standard basemap + its lit 3D buildings are the eagle mood Anand asked Mapbox for */
  if(health.qLevel<5)setCfg('show3dObjects',true);
  setCfg('showPointOfInterestLabels',false); setCfg('showTransitLabels',false); setCfg('showPlaceLabels',false); setCfg('showRoadLabels',false);
  try{ map.setFog({range:[0.8,6], color:'#3a2a2e', 'high-color':'#0f2233', 'horizon-blend':0.12, 'space-color':'#05070c', 'star-intensity':0.15}); }catch(e){}
@@ -1162,6 +1162,24 @@ function hideAscendRing(){ var r=document.getElementById('ascendRing'); if(r)r.c
    from the same sector streets / footprints / routes the player dived into,
    centred on the shared world frame, so walkers on the correct route are
    around the survivor. Ascend hands back to the Mapbox eagle. */
+function buildFacadeTextures(){ /* Ticket-08: procedural facade atlas — one seeded layout drives BOTH canvases, so the emissive lit windows land exactly on the albedo windows. ~14% lit, warm/cool mix, whole-floor blackout rows. */
+ var cols=10, rows=26, seed=424243;
+ function rnd(){ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x80000000; }
+ var rowOff=[], cells=[];
+ for(var r=0;r<rows;r++){ rowOff.push(rnd()<.09); }
+ for(var r2=0;r2<rows;r2++)for(var c=0;c<cols;c++)cells.push({lit:rnd()<.14, warm:rnd()<.72});
+ function draw(litPass){ var cv=document.createElement('canvas'); cv.width=256; cv.height=512; var g=cv.getContext('2d');
+  g.fillStyle=litPass?'#000000':'#20262d'; g.fillRect(0,0,256,512);
+  if(!litPass){ g.fillStyle='rgba(255,255,255,.028)'; for(var s=0;s<260;s++)g.fillRect(((s*67)%256),((s*131)%512),2,2); }
+  var cw=256/cols, ch=512/rows;
+  for(var rr=0;rr<rows;rr++){ if(rowOff[rr])continue;
+   for(var cc=0;cc<cols;cc++){ var cell=cells[rr*cols+cc]; var x=cc*cw+4, y=rr*ch+4, w=cw-8, h=ch-9;
+    if(cell.lit){ g.fillStyle=litPass?(cell.warm?'#ffc06a':'#bcd9ff'):(cell.warm?'#d9a860':'#93b4dd'); g.fillRect(x,y,w,h); }
+    else if(!litPass){ var v=36+(((rr*31+cc*17)%23)); g.fillStyle='rgb('+((v*.8)|0)+','+((v*.94)|0)+','+v+')'; g.fillRect(x,y,w,h); } } }
+  return cv; }
+ var alb=new THREE.CanvasTexture(draw(false)); alb.encoding=THREE.sRGBEncoding;
+ var emi=new THREE.CanvasTexture(draw(true));
+ return {alb:alb, emi:emi}; }
 function buildStreetGeometry(){
  streetGroup=new THREE.Group(); streetGroup.visible=false;
  var gnd=new THREE.Mesh(new THREE.PlaneGeometry(500,500),new THREE.MeshStandardMaterial({color:0x0d1622,roughness:1,metalness:0}));
@@ -1181,12 +1199,22 @@ function buildStreetGeometry(){
    for(var q=0;q<6;q++)cols.push(col.r,col.g,col.b); } });
  var rg=new THREE.BufferGeometry(); rg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); rg.setAttribute('color',new THREE.Float32BufferAttribute(cols,3)); rg.computeVertexNormals();
  streetGroup.add(new THREE.Mesh(rg,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.96,metalness:0})));
+ /* Ticket-08: streetlamp glow — additive points along the real road centrelines, alternating sides: pools of sodium light down every street (one draw call) */
+ var lampPos=[], lampFlip=false;
+ roadSegments.forEach(function(sg2){ var ax=sg2[0],ay=sg2[1],bx=sg2[2],by=sg2[3]; var len=Math.hypot(bx-ax,by-ay); if(len<20)return; var steps=Math.floor(len/26); var nx=-(by-ay)/len, ny=(bx-ax)/len;
+  for(var k2=1;k2<steps;k2++){ lampFlip=!lampFlip; var off=lampFlip?3.4:-3.4; lampPos.push((ax+(bx-ax)*k2/steps+nx*off)*WORLD, 4.6*WORLD, -(ay+(by-ay)*k2/steps+ny*off)*WORLD); } });
+ if(lampPos.length>4200){ var thin=[]; for(var li=0;li<lampPos.length;li+=6)thin.push(lampPos[li],lampPos[li+1],lampPos[li+2]); lampPos=thin; }
+ var lampCv=document.createElement('canvas'); lampCv.width=lampCv.height=64; var lg= lampCv.getContext('2d'); var grad=lg.createRadialGradient(32,32,2,32,32,30); grad.addColorStop(0,'rgba(255,190,110,1)'); grad.addColorStop(.4,'rgba(255,160,80,.45)'); grad.addColorStop(1,'rgba(255,150,60,0)'); lg.fillStyle=grad; lg.fillRect(0,0,64,64);
+ var lampGeo=new THREE.BufferGeometry(); lampGeo.setAttribute('position',new THREE.Float32BufferAttribute(lampPos,3));
+ var lamps=new THREE.Points(lampGeo,new THREE.PointsMaterial({size:.55,map:new THREE.CanvasTexture(lampCv),transparent:true,opacity:.5,depthWrite:false,blending:THREE.AdditiveBlending,sizeAttenuation:true,color:0xffbe78}));
+ lamps.frustumCulled=false; streetGroup.add(lamps);
  /* buildings — one instanced box per OSM footprint bounds, so the street canyons
     around the dive point are the real footprints (collision uses the same bounds) */
  var bg=new THREE.BoxGeometry(1,1,1); bg.translate(0,.5,0);
- var bm=new THREE.MeshStandardMaterial({roughness:.92,metalness:.05});
+ var fxT=buildFacadeTextures(); /* Ticket-08: textured facades replace the flat grey boxes ("stick boxy") */
+ var bm=new THREE.MeshStandardMaterial({map:fxT.alb,emissiveMap:fxT.emi,emissive:0xffffff,emissiveIntensity:1.25,roughness:.85,metalness:.08});
  var inst=new THREE.InstancedMesh(bg,bm,Math.max(1,buildingBounds.length));
- var d=new THREE.Object3D(), ca=new THREE.Color(0x2c4250), cb=new THREE.Color(0x4d6572);
+ var d=new THREE.Object3D(), ca=new THREE.Color(0x77828c), cb=new THREE.Color(0xb9c3cb); /* tints raised: instance colour multiplies the atlas, the old dark pair crushed it */
  buildingBounds.forEach(function(b,idx){
   var w=Math.max(.4,(b.maxx-b.minx)*WORLD), dep=Math.max(.4,(b.maxy-b.miny)*WORLD), h=Math.max(2,Math.min(90,b.h))*WORLD;
   d.position.set(b.cx*WORLD,0,-b.cy*WORLD); d.scale.set(w,h,dep); d.rotation.set(0,0,0); d.updateMatrix();

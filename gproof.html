@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Toronto TD — Google 3D Tiles Proof</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#0a121e;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace;color:#dfe7ee;}
+  #view{position:fixed;inset:0;}
+  canvas{display:block;}
+  .chip{position:fixed;z-index:5;background:rgba(8,14,20,.78);border:1px solid rgba(140,180,200,.35);border-radius:8px;padding:8px 11px;font-size:11px;letter-spacing:.05em;backdrop-filter:blur(6px);}
+  #title{top:12px;left:12px;color:#ffb35c;font-weight:700;max-width:min(78vw,430px);}
+  #title small{display:block;color:#9fb4c0;font-weight:400;margin-top:3px;letter-spacing:.02em;line-height:1.45;}
+  #hint{bottom:12px;left:12px;color:#9fb4c0;}
+  #attr{bottom:12px;right:12px;color:#9fb4c0;}
+  .mvbtn{position:fixed;z-index:5;width:58px;height:58px;border-radius:50%;background:rgba(8,14,20,.7);border:1px solid rgba(140,180,200,.4);color:#dfe7ee;font-size:20px;display:flex;align-items:center;justify-content:center;user-select:none;-webkit-user-select:none;touch-action:none;}
+  #fwd{right:18px;bottom:86px;} #back{right:18px;bottom:18px;}
+  #load{position:fixed;inset:0;z-index:9;background:#0a121e;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;}
+  #load .big{color:#ffb35c;font-size:15px;letter-spacing:.08em;}
+  #load .small{color:#9fb4c0;font-size:12px;max-width:420px;line-height:1.5;}
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div class="chip" id="title">REAL DOWNTOWN TORONTO — Google Photorealistic 3D Tiles<small>The actual city as a textured 3D mesh (the same data as Google Earth), mirrored locally for this sector. Google's textures are baked daylight, graded toward dusk — the Marble street stays the night layer.</small></div>
+<div class="chip" id="hint">Drag to look around · scroll / W A S D to move · buttons to fly</div>
+<div class="chip" id="attr">Imagery © Google</div>
+<div class="mvbtn" id="fwd">▲</div>
+<div class="mvbtn" id="back">▼</div>
+<div id="load"><div class="big">LOADING THE REAL CITY…</div><div class="small" id="loadmsg">Streaming the mirrored downtown tileset. A few seconds on Wi-Fi.</div></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+  "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+  "3d-tiles-renderer": "https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.4.10/src/index.js"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { TilesRenderer } from '3d-tiles-renderer';
+
+const loadEl = document.getElementById('load');
+const loadMsg = document.getElementById('loadmsg');
+let sawModel = false;
+
+function fail(msg) {
+  loadEl.style.display = 'flex';
+  loadMsg.textContent = msg;
+  loadEl.querySelector('.big').textContent = 'THE CITY DID NOT LOAD';
+}
+
+/* Fail plainly if the mirrored tileset itself is missing. */
+fetch('gtiles/tileset.json', { method: 'HEAD' }).then(r => {
+  if (!r.ok) fail('The mirrored tileset (gtiles/tileset.json) could not be loaded — HTTP ' + r.status + '.');
+}).catch(() => fail('The mirrored tileset (gtiles/tileset.json) could not be reached.'));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1622);
+scene.fog = new THREE.Fog(0x0d1622, 900, 6500);
+
+const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 1, 12000);
+/* Local frame: origin = Union Station (43.6505, -79.3800), X east, Y up,
+   Z south (north is -Z). Start ~450 m south at ~260 m, looking north. */
+const rig = { yaw: 0, pitch: -0.30, pos: new THREE.Vector3(0, 260, 450) };
+camera.position.copy(rig.pos);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.8;
+document.getElementById('view').appendChild(renderer.domElement);
+
+const tiles = new TilesRenderer('gtiles/tileset.json');
+tiles.setCamera(camera);
+tiles.setResolutionFromRenderer(camera, renderer);
+if ('errorTarget' in tiles) tiles.errorTarget = 10;
+
+/* Place the ECEF tiles into the local ENU frame: invert the sector's
+   East-North-Up frame and rotate Z-up ENU into three.js Y-up. */
+{
+  const lat = THREE.MathUtils.degToRad(43.6505);
+  const lon = THREE.MathUtils.degToRad(-79.3800);
+  const enu = tiles.ellipsoid.getEastNorthUpFrame(lat, lon, new THREE.Matrix4());
+  const toThree = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+  tiles.group.matrixAutoUpdate = false;
+  tiles.group.matrix.copy(toThree.multiply(enu.invert()));
+  tiles.group.matrixWorldNeedsUpdate = true;
+}
+scene.add(tiles.group);
+
+tiles.addEventListener('load-model', () => {
+  if (!sawModel) { sawModel = true; loadEl.style.display = 'none'; }
+});
+tiles.addEventListener('load-error', (e) => {
+  console.warn('tile load error', e && e.error);
+});
+setTimeout(() => { if (!sawModel) fail('No tiles rendered after 25 s — the tileset or the tile files may be missing.'); }, 25000);
+
+/* --- look + move controls (drag look, wheel/WASD/buttons to move) --- */
+let dragging = false, lx = 0, ly = 0, moveF = 0, moveB = 0;
+const el = renderer.domElement;
+el.style.touchAction = 'none';
+el.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; el.setPointerCapture(e.pointerId); });
+el.addEventListener('pointermove', e => { if (!dragging) return; rig.yaw -= (e.clientX - lx) * 0.0032; rig.pitch -= (e.clientY - ly) * 0.0028; rig.pitch = Math.max(-1.2, Math.min(1.2, rig.pitch)); lx = e.clientX; ly = e.clientY; });
+el.addEventListener('pointerup', () => { dragging = false; });
+addEventListener('wheel', e => { rig.pos.addScaledVector(fwdVec(), -Math.sign(e.deltaY) * 8); clampPos(); }, { passive: true });
+const keys = {};
+addEventListener('keydown', e => { keys[e.code] = true; });
+addEventListener('keyup', e => { keys[e.code] = false; });
+function bindHold(id, set) { const b = document.getElementById(id); b.addEventListener('pointerdown', e => { e.preventDefault(); set(1); }); ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, () => set(0))); }
+bindHold('fwd', v => { moveF = v; });
+bindHold('back', v => { moveB = v; });
+
+function fwdVec() { return new THREE.Vector3(-Math.sin(rig.yaw) * Math.cos(rig.pitch), Math.sin(rig.pitch), -Math.cos(rig.yaw) * Math.cos(rig.pitch)); }
+function clampPos() { rig.pos.x = Math.max(-2600, Math.min(2600, rig.pos.x)); rig.pos.z = Math.max(-2600, Math.min(2600, rig.pos.z)); rig.pos.y = Math.max(4, Math.min(1400, rig.pos.y)); }
+let last = performance.now();
+renderer.setAnimationLoop(() => {
+  const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const sp = (keys.ShiftLeft ? 160 : 55) * dt, f = fwdVec(); f.y = 0; f.normalize();
+  const r = new THREE.Vector3().crossVectors(f, new THREE.Vector3(0, 1, 0)).negate();
+  if (keys.KeyW || keys.ArrowUp || moveF) rig.pos.addScaledVector(f, sp);
+  if (keys.KeyS || keys.ArrowDown || moveB) rig.pos.addScaledVector(f, -sp);
+  if (keys.KeyA || keys.ArrowLeft) rig.pos.addScaledVector(r, -sp);
+  if (keys.KeyD || keys.ArrowRight) rig.pos.addScaledVector(r, sp);
+  if (keys.KeyR) rig.pos.y += sp;
+  if (keys.KeyF) rig.pos.y -= sp;
+  clampPos();
+  camera.position.copy(rig.pos);
+  camera.lookAt(rig.pos.clone().add(fwdVec()));
+  camera.updateMatrixWorld();
+  tiles.update();
+  renderer.render(scene, camera);
+});
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); tiles.setResolutionFromRenderer(camera, renderer); });
+</script>
+</body>
+</html>

@@ -425,13 +425,76 @@ function vistaTex(w, h, painter){
   ten.position.set(64, 17, 106); ten.castShadow = true; authored.add(ten);
   const tenTower = new THREE.Mesh(new THREE.BoxGeometry(10, 46, 10), screenMat(['#d97b2f', '#20555e', '#a62b1f', '#e3d7bd']));
   tenTower.position.set(24, 23, 86); authored.add(tenTower);
+
+  // THE STREETCAR — purpose-built TTC car, jack-knifed across the crossing
+  // (the tinted blob it replaces was a patch, not a streetcar)
+  const carSide = vistaTex(1024, 256, (g, w, h) => {
+    g.fillStyle = '#ddd3bc'; g.fillRect(0, 0, w, h);                       // cream upper
+    g.fillStyle = '#9e2a22'; g.fillRect(0, 138, w, 118);                   // TTC red lower
+    g.fillStyle = '#20262b'; g.fillRect(0, 34, w, 74);                     // window band
+    for (let x = 14; x < w - 20; x += 62){
+      g.fillStyle = R() > .25 ? 'rgba(255,176,102,0.8)' : 'rgba(150,175,180,0.75)';
+      g.fillRect(x, 42, 50, 58);
+    }
+    g.fillStyle = 'rgba(12,10,9,0.85)';
+    for (let x = 6; x < w; x += 62) g.fillRect(x, 30, 5, 84);              // mullions
+    g.fillRect(0, 108, w, 6); g.fillRect(0, 236, w, 20);                   // belt + skirt shadow
+    g.fillStyle = '#3a3f45'; g.fillRect(0, 0, w, 16);                      // roof edge
+    for (let i = 0; i < 1600; i++){ g.fillStyle = `rgba(20,14,10,${R()*0.09})`; g.fillRect(R()*w, R()*h, 2, 2); }
+  });
+  const carEnd = vistaTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#ddd3bc'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#9e2a22'; g.fillRect(0, 138, w, 118);
+    g.fillStyle = '#20262b'; g.fillRect(28, 34, 200, 74);                  // windshield
+    g.fillStyle = 'rgba(255,176,102,0.5)'; g.fillRect(36, 42, 84, 58); g.fillRect(136, 42, 84, 58);
+    g.fillStyle = '#3a3f45'; g.fillRect(0, 0, w, 16);
+    g.fillStyle = 'rgba(255,220,150,0.95)'; g.beginPath(); g.arc(52, 196, 11, 0, 7); g.fill();
+    g.beginPath(); g.arc(204, 196, 11, 0, 7); g.fill();                    // headlights
+  });
+  const carSideMat = new THREE.MeshStandardMaterial({ map: carSide, roughness: .55 });
+  const carEndMat = new THREE.MeshStandardMaterial({ map: carEnd, roughness: .55 });
+  const carRoofMat = new THREE.MeshStandardMaterial({ color: 0x8f9296, roughness: .6 });
+  const car = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.5, 3.1, 14.6),
+    [carSideMat, carSideMat, carRoofMat, carRoofMat, carEndMat, carEndMat]);
+  body.position.y = 1.95; body.castShadow = true; car.add(body);
+  const roofArc = new THREE.Mesh(new THREE.CylinderGeometry(1.24, 1.24, 13.6, 14, 1, false, 0, Math.PI), carRoofMat);
+  roofArc.rotation.z = Math.PI / 2; roofArc.rotation.y = Math.PI / 2; roofArc.position.y = 3.5; car.add(roofArc);
+  const skirtMat = new THREE.MeshStandardMaterial({ color: 0x1d1f22, roughness: .9 });
+  for (const dz of [-4.6, 4.6]){
+    const bogie = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.9, 3.2), skirtMat);
+    bogie.position.set(0, 0.45, dz); car.add(bogie);
+  }
+  const pantoMat = new THREE.MeshStandardMaterial({ color: 0x2c2e30, roughness: .5, metalness: .4 });
+  for (const sgn of [-1, 1]){
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.6), pantoMat);
+    arm.position.set(sgn * 0.55, 4.6, 0); arm.rotation.z = sgn * 0.45; car.add(arm);
+  }
+  const pantoBar = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.07, 0.3), pantoMat);
+  pantoBar.position.y = 5.25; car.add(pantoBar);
+  car.position.set(-1, 0, 0.5); car.rotation.y = 0.85;                    // jack-knifed
+  authored.add(car);
+  // the Meshy-built challenger: if it loads, it takes the pose (procedural car stands down)
+  new GLTFLoader().loadAsync('hero-tiles/dressing/ttc.glb').then(g => {
+    const m = g.scene;
+    const bb = new THREE.Box3().setFromObject(m), sz = bb.getSize(new THREE.Vector3());
+    if (sz.x > sz.z) m.rotation.y = Math.PI / 2;                 // length onto local z
+    m.scale.setScalar(15 / Math.max(sz.x, sz.z));
+    const wrap = new THREE.Group(); wrap.add(m); authored.add(wrap);
+    const bb2 = new THREE.Box3().setFromObject(wrap), c2 = bb2.getCenter(new THREE.Vector3());
+    m.position.x -= c2.x; m.position.z -= c2.z; m.position.y -= bb2.min.y;   // centre on wrap origin, grounded
+    wrap.position.set(-1, 0, 0.5); wrap.rotation.y = 0.85;                   // the jack-knife pose
+    car.visible = false;
+    window.__ttc = 'meshy';
+  }).catch(() => { window.__ttc = 'procedural'; });
+
 })();
 
 /* ---------- dressing props ---------- */
 const loader = new GLTFLoader();
 fetch('hero-tiles/dressing.json').then(r => r.json()).then(d => {
   const cache = {};
-  d.placements.filter(p => p.src !== 'storefront').forEach(p => {
+  d.placements.filter(p => p.src !== 'storefront' && p.src !== 'streetcar').forEach(p => {
     const src = 'hero-tiles/dressing/' + p.src + (p.src.endsWith('.glb') ? '' : '.glb');
     if (!cache[src]) cache[src] = loader.loadAsync(src).catch(() => null);
     cache[src].then(gltf => { if (!gltf) return;
@@ -441,7 +504,7 @@ fetch('hero-tiles/dressing.json').then(r => r.json()).then(d => {
                       'barrier': 0x9a8a6a, 'streetlight': 0x707880, 'traffic-light-gantry': 0x707880,
                       'bus-shelter': 0x7a7f85, 'dumpster': 0x5d6b5e };
       const tint = TINTS[p.src];
-      o.traverse(n => { if (n.isMesh){ n.castShadow = true; n.receiveShadow = true;
+      o.traverse(n => { if (n.isMesh){ n.castShadow = false; n.receiveShadow = true;
         if (tint && n.material && n.material.color){ n.material = n.material.clone(); n.material.color.multiply(new THREE.Color(tint)); } } });
       authored.add(o);
     });
@@ -603,6 +666,7 @@ addEventListener('resize', () => {
 });
 
 /* QA hooks */
+window.__dbg = { scene, authored, tilesG };
 window.__noir = {
   setView,
   snap(){ eagleT = view === 'eagle' ? 1 : 0; },

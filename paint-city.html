@@ -56,7 +56,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 const PAPER = 0x7d7a68;
 const app = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -65,7 +65,7 @@ app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(PAPER);
-const FOG_STREET = 0.0085, FOG_EAGLE = 0.00022;
+const FOG_STREET = 0.0068, FOG_EAGLE = 0.00007;
 scene.fog = new THREE.FogExp2(PAPER, FOG_STREET);
 
 const camera = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.1, 6000);
@@ -73,7 +73,7 @@ const camera = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.1, 6000
 /* ---------- lights: bright, even, like a studio over a drawing board ---------- */
 const hemi = new THREE.HemisphereLight(0x74949a, 0x3a2c20, 1.95); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffa257, 2.6);
-sun.position.set(-85, 34, -25);
+sun.position.set(-85, 52, -25);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left = -130; sun.shadow.camera.right = 130;
@@ -90,7 +90,7 @@ scene.add(heroSpot, heroSpot.target);
 function cnv(w, h){ const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d')]; }
 
 /* graphite facade: one canvas tile = 24 m x 24 m of wall */
-function facadeTexture(base, seed){
+function facadeTexture(base, seed, wins){
   let s = seed; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
   const [c, g] = cnv(512, 512);
   g.fillStyle = base; g.fillRect(0, 0, 512, 512);
@@ -98,7 +98,7 @@ function facadeTexture(base, seed){
   for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++){
     const x = i*cw + cw*0.22, y = j*ch + ch*0.2, w = cw*0.56, h = ch*0.6;
     const r = rnd();
-    g.fillStyle = r < 0.42 ? '#22333a' : (r < 0.55 ? '#ffb46b' : '#b3c3c6');
+    g.fillStyle = r < 0.42 ? wins[0] : (r < 0.55 ? wins[1] : wins[2]);
     g.fillRect(x, y, w, h);
     g.strokeStyle = 'rgba(30,28,25,0.85)'; g.lineWidth = 2.4; g.strokeRect(x, y, w, h);
     if (r >= 0.42 && r < 0.55){ g.fillStyle = 'rgba(120,50,10,0.35)'; g.fillRect(x, y + h*0.5, w, h*0.5); }
@@ -112,8 +112,21 @@ function facadeTexture(base, seed){
   t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   return t;
 }
-const facadeVariants = ['#8f7c62', '#7f918c', '#9c8668'].map((b, i) =>
-  new THREE.MeshStandardMaterial({ map: facadeTexture(b, 1237 + i * 3100), roughness:.92, metalness:0 }));
+const FACADE_SPECS = [
+  ['#8f7c62', ['#22333a','#ffb46b','#b3c3c6']],
+  ['#7f918c', ['#22333a','#ffb46b','#b3c3c6']],
+  ['#9c8668', ['#22333a','#ffb46b','#b3c3c6']],
+  ['#ddd6c4', ['#565e66','#7c8894','#efe9da']],
+  ['#8a6f3c', ['#4a3a1e','#e8c87a','#a8894e']],
+  ['#5d3a30', ['#2e1c16','#c9a86a','#7a5546']],
+  ['#2b2926', ['#17161a','#5d686e','#9aa4aa']],
+  ['#3c4a55', ['#1d262e','#6d8896','#aebfc8']],
+  ['#8a755c', ['#77644c','#c8a06a','#9c8a6e']],
+];
+const facadeVariants = FACADE_SPECS.map(([base, wins], i) =>
+  new THREE.MeshStandardMaterial({ map: facadeTexture(base, 1237 + i * 3100, wins), roughness:.92, metalness:0 }));
+const roofVariants = ['#7d6a55','#7d6a55','#7d6a55','#e8e2d2','#6e5830','#42281f','#1f1d1b','#2c363e','#cfc4a8'].map(c =>
+  new THREE.MeshStandardMaterial({ color:c, roughness:1 }));
 const roofMat = new THREE.MeshStandardMaterial({ color:0x7d6a55, roughness:1 });
 
 /* ---------- the whole city: 5,975 footprints, chunk-merged ---------- */
@@ -125,13 +138,16 @@ function concatParts(parts){
 }
 fetch('city-buildings.json').then(r => r.json()).then(list => {
   const CH = 300, acc = new Map();
-  const bucket = (key) => { if (!acc.has(key)) acc.set(key, { wall:[[],[],[]], roof:[] }); return acc.get(key); };
+  const bucket = (key) => { if (!acc.has(key)) acc.set(key, { wall:Array.from({length:9},()=>[]), roof:Array.from({length:9},()=>[]) }); return acc.get(key); };
+  const WALLVAR = { white:3, gold:4, scotia:5, tdblack:6, darkglass:7, union:1 };
+  const ROOFVAR = { white:3, gold:4, scotia:5, tdblack:6, darkglass:7, union:8 };
   let built = 0;
   list.forEach((b, idx) => {
     if (b.h > 320) return;                       // CN Tower is authored separately
     let cx = 0, cy = 0; b.pts.forEach(p => { cx += p[0]; cy += p[1]; }); cx /= b.pts.length; cy /= b.pts.length;
     if (Math.abs(cx) > 2000 || Math.abs(cy) > 2000) return;
     if (Math.hypot(cx, cy) < 120 && ((Math.abs(cx) < 16 && Math.abs(cy) < 75) || (Math.abs(cy) < 16 && Math.abs(cx) < 75))) return;
+    if (Math.hypot(cx + 420, cy + 1360) < 115) return;   // Rogers Centre dome is authored
     const shape = new THREE.Shape();
     b.pts.forEach((p, i) => { if (i === 0) shape.moveTo(p[0], p[1]); else shape.lineTo(p[0], p[1]); });
     const geo = new THREE.ExtrudeGeometry(shape, { depth: Math.max(6, b.h), bevelEnabled:false });
@@ -139,7 +155,8 @@ fetch('city-buildings.json').then(r => r.json()).then(list => {
     const cell = bucket(Math.floor(cx/CH) + ':' + Math.floor(cy/CH));
     const pos = geo.attributes.position.array, nor = geo.attributes.normal.array, uv = geo.attributes.uv.array;
     geo.groups.forEach(g => {
-      const dst = g.materialIndex === 1 ? cell.wall[idx % 3] : cell.roof;
+      const wv = b.s ? WALLVAR[b.s] : (b.h < 15 ? 8 : idx % 3), rv = b.s ? ROOFVAR[b.s] : 0;
+      const dst = g.materialIndex === 1 ? cell.wall[wv] : cell.roof[rv];
       dst.push({ pos: pos.subarray(g.start*3, (g.start+g.count)*3),
                  nor: nor.subarray(g.start*3, (g.start+g.count)*3),
                  uv:  uv.subarray(g.start*2, (g.start+g.count)*2) });
@@ -157,7 +174,7 @@ fetch('city-buildings.json').then(r => r.json()).then(list => {
       const m = new THREE.Mesh(g, mat); scene.add(m); window.__cityChunks++;
     };
     cell.wall.forEach((parts, v) => mk(parts, facadeVariants[v], true));
-    mk(cell.roof, roofMat, true);
+    cell.roof.forEach((parts, v) => mk(parts, roofVariants[v], true));
   });
   console.log('city buildings built:', built, 'merged meshes:', window.__cityChunks);
 }).catch(e => console.warn('city buildings', e));
@@ -186,6 +203,18 @@ fetch('city-roads.json').then(r => r.json()).then(roads => {
 const base = new THREE.Mesh(new THREE.PlaneGeometry(5200, 5200),
   new THREE.MeshStandardMaterial({ color:0x6e6154, roughness:1 }));
 base.rotation.x = -Math.PI/2; base.position.y = -0.06; base.position.z = 420; base.receiveShadow = true; scene.add(base);
+(function lake(){
+  const shore = [[-2800,1050],[-1600,1130],[-700,1260],[0,1360],[800,1460],[1800,1620],[2800,1850],[2800,4600],[-2800,4600]];
+  const sh = new THREE.Shape(); shore.forEach(([x,z], i) => { if (i===0) sh.moveTo(x,z); else sh.lineTo(x,z); });
+  const g = new THREE.ShapeGeometry(sh); g.rotateX(Math.PI/2);
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color:0x2e4d4f, roughness:.38, metalness:.05, side:THREE.DoubleSide }));
+  m.position.y = -0.02; scene.add(m);
+  const isl = [[-1900,2180],[1900,2280],[1950,2560],[-1850,2480]];
+  const sh2 = new THREE.Shape(); isl.forEach(([x,z], i) => { if (i===0) sh2.moveTo(x,z); else sh2.lineTo(x,z); });
+  const g2 = new THREE.ShapeGeometry(sh2); g2.rotateX(Math.PI/2);
+  const m2 = new THREE.Mesh(g2, new THREE.MeshStandardMaterial({ color:0x55603f, roughness:1, side:THREE.DoubleSide }));
+  m2.position.y = -0.008; scene.add(m2);
+})();
 
 function streetTexture(){
   const [c, g] = cnv(512, 512);
@@ -269,6 +298,14 @@ sign('CINEMA', 8, 16.0, 10.5, 16.0, -Math.PI/2);
   const sky = new THREE.Mesh(new THREE.CylinderGeometry(12, 10, 18, 10), mat); sky.position.y = 440;
   const ant = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.5, 105, 6), mat); ant.position.y = 500;
   g.add(shaft, pod, sky, ant); g.position.set(-555, 0, 1493); scene.add(g);
+  const dome = new THREE.Group();
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(105, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.46),
+    new THREE.MeshStandardMaterial({ color:0xb9b0a0, roughness:.8 }));
+  cap.scale.y = 0.48;
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(107, 109, 12, 28),
+    new THREE.MeshStandardMaterial({ color:0x4c463e, roughness:1 }));
+  ring.position.y = 2;
+  dome.add(cap, ring); dome.position.set(-420, 4, 1360); scene.add(dome);
 })();
 
 /* ---------- dressing props ---------- */
@@ -330,7 +367,7 @@ const SketchShader = {
       mean = sum / n; float ml = lsum / n; var = max(l2 / n - ml * ml, 0.0);
     }
     void main(){
-      vec2 px = 0.8 / res;
+      vec2 px = 0.62 / res;
       vec3 m0, m1, m2, m3; float v0, v1, v2, v3;
       quadrant(vUv, px, -1.0,  1.0, m0, v0);
       quadrant(vUv, px,  1.0,  1.0, m1, v1);
@@ -340,12 +377,16 @@ const SketchShader = {
       if (v1 < bv){ col = m1; bv = v1; }
       if (v2 < bv){ col = m2; bv = v2; }
       if (v3 < bv){ col = m3; bv = v3; }
+      float _ex = lum(texture2D(tDiffuse, vUv + vec2(px.x * 2.0, 0.0)).rgb) - lum(texture2D(tDiffuse, vUv - vec2(px.x * 2.0, 0.0)).rgb);
+      float _ey = lum(texture2D(tDiffuse, vUv + vec2(0.0, px.y * 2.0)).rgb) - lum(texture2D(tDiffuse, vUv - vec2(0.0, px.y * 2.0)).rgb);
+      col *= 1.0 - clamp((abs(_ex) + abs(_ey)) * 1.4, 0.0, 1.0) * 0.16;
 
       // paint grade: warm dusk, gentle saturation, canvas body
       float g = lum(col);
       col = mix(vec3(g), col, 1.3);
       col *= vec3(1.06, 1.0, 0.93);
-      col = clamp(col * 1.24 + 0.035, 0.0, 1.0);
+      col = (col - 0.5) * 1.05 + 0.5;
+      col = clamp(col * 1.24 + 0.012, 0.0, 1.0);
       float blotch = hash(floor(vUv * res / 7.0));
       col *= 1.0 + (blotch - 0.5) * 0.055;                        // brush blotches
       col += (hash(vUv * res) - 0.5) * 0.028;                     // canvas grain
@@ -374,7 +415,7 @@ function applyCam(t, dt){
     pivot.z + Math.cos(y) * Math.cos(p) * dist);
   _look.set(pivot.x - Math.sin(y) * 8, pivot.y - 0.25, pivot.z - Math.cos(y) * 8);
   if (e > 0){
-    _eaglePos.set(_origin.x + Math.sin(t * 0.02) * 700, 1060, _origin.z + 700);
+    _eaglePos.set(_origin.x + Math.sin(t * 0.02 + 0.35) * 1150, 1250, _origin.z + Math.cos(t * 0.02 + 0.35) * 1150);
     _camPos.lerp(_eaglePos, e); _look.lerp(_origin, e);
     scene.fog.density = THREE.MathUtils.lerp(FOG_STREET, FOG_EAGLE, e);
     hemi.intensity = THREE.MathUtils.lerp(1.95, 2.2, e);

@@ -796,7 +796,7 @@ var state={phase:'loading',wave:0,hp:100,evac:0,evacTarget:0,credits:450,kills:0
 var player={hp:100,lastHurt:-99,ammo:12,fireUntil:0,reloadUntil:0,concCdUntil:0,decoyCdUntil:0,decoy:null,diveLockUntil:0,dmgWindow:0,dmgWindowT:0,aiming:false,stillSince:0,lastFireAt:-9999,faceYaw:2.35,walkPhase:0,aimBlend:0,rollUntil:0,rollCdUntil:0,rollDir:{x:0,z:-1},shoveCdUntil:0,dead:false,respawnAt:0,fHoldStart:0,fAscTriggered:false};
 /* camera rig: one PerspectiveCamera, elev in metres */
 var rig={mode:'eagle',elev:180,target:new THREE.Vector3(-2,0,20),yaw:Math.PI/4,streetPos:new THREE.Vector3(0,0,30),streetYaw:2.35,streetPitch:0,diveT:0,diveFromPos:new THREE.Vector3(),diveFromQuat:new THREE.Quaternion(),diveToPos:new THREE.Vector3(),landing:null,landingOk:false,trauma:0,shakeOn:true,hitStopUntil:0,charSpeed:0,charMoving:false,charSprinting:false,muzzleUntil:0,diveDur:1.2,hybrid:false};
-var streetRenderer=null, streetGroup=null;
+var streetRenderer=null, streetGroup=null, eagleBuildingMesh=null, eagleRoadMesh=null; /* local-fallback eagle meshes (mapMode never builds them); hero mode hides them */
 var keys={}, pointers=new Map(), pinchDist=0, lookDrag=null, panDrag=null;
 var simAcc=0, radioTimer=4, lastFeedStreet=0;
 /* ---- Brief #8 D1: LIVE WAVE COUNTERS ----
@@ -811,7 +811,7 @@ var simAcc=0, radioTimer=4, lastFeedStreet=0;
    tower damage dealt, gate damage taken per route, leak points per route. */
 var waveStats={wave:0,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1};
 var diveDbg={ptr:'—',click:'—',land:'—'}; /* Ticket-03: dive-pipeline witness for the dev chip — ptr = raw unproject + world metres of the last pointer event, click = the dive click point + resolveLanding kind/result, land = the final streetPos + yaw. Re-reviews #11/#12 both funnelled to one Union-area spot on the Mapbox build while the same pipeline is correct in the fallback sim; these three readings discriminate pointer vs resolver vs anchor in one live run. */
-var BUILD_TAG='T11b'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
+var BUILD_TAG='T12'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
 function resetWaveStats(){ waveStats={wave:state.wave,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1}; }
 function waveStatsLine(){ return 'sim '+waveStats.simSec.toFixed(0)+'s/wall '+waveStats.wallSec.toFixed(0)+'s · shots B'+waveStats.shots.barricade+'/S'+waveStats.shots.siren+'/M'+waveStats.shots.marksman+' · towerDmg '+Math.round(waveStats.towerDmg)+' · gateDmg '+waveStats.gateDmg.map(function(v){return Math.round(v)}).join('/')+' · leakPts '+waveStats.leakPts.map(function(v){return Math.round(v)}).join('/')+' · routed '+(waveStats.routed>=0?('R'+(waveStats.routed+1)+' '+routeNames3[waveStats.routed]):'—'); } /* Brief #9 D4: the routed column's route rides the wave line */
 
@@ -1252,6 +1252,7 @@ function enterHybridStreet(){
  ensureHybridStreet(); rig.hybrid=true;
  selectedTowerType=null; clearSelection(); hidePlacementHints(); /* Brief #7 D5: no placement state may cross into street mode, via any entry path */
  if(streetGroup)streetGroup.visible=true;
+ heroOnEnter();
  if(survivor)survivor.scale.setScalar(1); /* local world scale — NOT the retired Mapbox WORLD rescale */
  var md=document.getElementById('map'); if(md)md.style.display='none';
  streetRenderer.domElement.style.display='block';
@@ -1265,6 +1266,7 @@ function enterHybridStreet(){
 }
 function exitHybridStreet(){
  if(!rig.hybrid)return; rig.hybrid=false;
+ heroOnExit();
  if(streetGroup)streetGroup.visible=false;
  if(streetRenderer)streetRenderer.domElement.style.display='none';
  var md=document.getElementById('map'); if(md&&mapMode)md.style.display='';
@@ -1272,6 +1274,131 @@ function exitHybridStreet(){
  tpsCamLog='TPS CAMERA: — (eagle · Mapbox)';
  updateMapStatus();
 }
+/* ================= HERO SCENE — Hold the Square, Yonge & Dundas (Ticket-12) =================
+   Real Google Photorealistic street mesh (offline-merged chunks, melt
+   curtains culled at merge) + AI-generated dressing, in one group scaled
+   WORLD at the anchor. A dive landing within HERO.radiusM of the anchor
+   swaps the sector streetGroup for this scene; other dives keep the
+   sector renderer. Chunk/dressing GLBs share one minimal format written
+   by merge_tiles.py / merge_dressing.py (single mesh, per-prim material
+   + embedded texture, no skins) — hence the small loader below. */
+var HERO={lat:43.6561,lng:-79.3802,radiusM:120,group:null,ready:false,loading:false,active:false,want:false,wp:null,_imgs:[]};
+var HERO_GRADE={r:0.55,g:0.62,b:0.85}; /* night grade multiplied into the daylight tile textures */
+function heroWorldPos(){ if(!HERO.wp){ var l=lngLatToLocal(HERO.lng,HERO.lat); HERO.wp=new THREE.Vector3(l.x*WORLD,0,-l.y*WORLD); } return HERO.wp; }
+function heroNear(pos){ var wp=heroWorldPos(); var dx=pos.x-wp.x,dz=pos.z-wp.z; return Math.sqrt(dx*dx+dz*dz)<=HERO.radiusM*WORLD; }
+function glbAccessor(g,bin,idx){
+ var a=g.accessors[idx], bv=g.bufferViews[a.bufferView];
+ var off=(bv.byteOffset||0)+(a.byteOffset||0);
+ var CT={5126:Float32Array,5125:Uint32Array,5123:Uint16Array,5121:Uint8Array};
+ var NC={SCALAR:1,VEC2:2,VEC3:3,VEC4:4};
+ var Arr=CT[a.componentType], n=NC[a.type], count=a.count;
+ var stride=bv.byteStride||0, tight=Arr.BYTES_PER_ELEMENT*n;
+ if(stride&&stride!==tight){
+  var src=new Arr(bin.buffer,bin.byteOffset+off), out=new Arr(count*n), per=stride/Arr.BYTES_PER_ELEMENT;
+  for(var i=0;i<count;i++)for(var j=0;j<n;j++)out[i*n+j]=src[i*per+j];
+  return out;
+ }
+ return new Arr(bin.buffer,bin.byteOffset+off,count*n);
+}
+function glbTexture(g,bin,imgIdx,cache){
+ if(cache[imgIdx])return cache[imgIdx];
+ var im=g.images[imgIdx], bv=g.bufferViews[im.bufferView];
+ var bytes=new Uint8Array(bin.buffer,bin.byteOffset+(bv.byteOffset||0),bv.byteLength);
+ var url=URL.createObjectURL(new Blob([bytes],{type:im.mimeType||'image/jpeg'}));
+ var tex=new THREE.Texture(); tex.encoding=THREE.sRGBEncoding;
+ var img=new Image(); HERO._imgs.push(img);
+ img.onload=function(){ tex.image=img; tex.needsUpdate=true; img._done=true; };
+ img.onerror=function(){ img._done=true; };
+ img.src=url; cache[imgIdx]=tex; return tex;
+}
+function glbToGroup(buf,lit){
+ var dv=new DataView(buf), jl=dv.getUint32(12,true);
+ var g=JSON.parse(new TextDecoder().decode(new Uint8Array(buf,20,jl)));
+ var bo=20+jl, bl=dv.getUint32(bo,true), bin=new Uint8Array(buf,bo+8,bl);
+ var grp=new THREE.Group(), cache={};
+ g.meshes[0].primitives.forEach(function(p){
+  var geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(glbAccessor(g,bin,p.attributes.POSITION),3));
+  if(p.attributes.NORMAL)geo.setAttribute('normal',new THREE.BufferAttribute(glbAccessor(g,bin,p.attributes.NORMAL),3));
+  if(p.attributes.TEXCOORD_0)geo.setAttribute('uv',new THREE.BufferAttribute(glbAccessor(g,bin,p.attributes.TEXCOORD_0),2));
+  if(p.indices!==undefined)geo.setIndex(new THREE.BufferAttribute(glbAccessor(g,bin,p.indices),1));
+  var mat=(p.material!==undefined)?g.materials[p.material]:null;
+  var pbr=(mat&&mat.pbrMetallicRoughness)||{}, base=pbr.baseColorFactor||[1,1,1,1], map=null;
+  if(pbr.baseColorTexture)map=glbTexture(g,bin,g.textures[pbr.baseColorTexture.index].source,cache);
+  var m;
+  if(lit)m=new THREE.MeshStandardMaterial({map:map,color:new THREE.Color(base[0],base[1],base[2]),roughness:.88,metalness:.04});
+  else m=new THREE.MeshBasicMaterial({map:map,color:new THREE.Color(base[0]*HERO_GRADE.r,base[1]*HERO_GRADE.g,base[2]*HERO_GRADE.b)});
+  var mesh=new THREE.Mesh(geo,m); mesh.frustumCulled=false; grp.add(mesh);
+ });
+ return grp;
+}
+function heroStreetTexture(){
+ var S=1024, c=document.createElement('canvas'); c.width=c.height=S;
+ var g=c.getContext('2d'), m=S/110;
+ var px=function(v){return S/2+v*m;}, pz=function(v){return S/2+v*m;};
+ g.fillStyle='#22242a'; g.fillRect(0,0,S,S);
+ for(var i=0;i<26000;i++){ g.fillStyle='rgba('+(140+Math.random()*60|0)+','+(140+Math.random()*60|0)+','+(150+Math.random()*60|0)+','+(Math.random()*0.05)+')'; g.fillRect(Math.random()*S,Math.random()*S,1.6,1.6); }
+ for(var i=0;i<26;i++){ g.fillStyle='rgba(0,0,0,'+(0.04+Math.random()*0.07)+')'; g.beginPath(); g.ellipse(Math.random()*S,Math.random()*S,20+Math.random()*70,14+Math.random()*46,Math.random()*3,0,7); g.fill(); }
+ var road=10;
+ g.fillStyle='rgba(255,255,255,0.48)';
+ var bar=function(x,z,w,h){ g.fillRect(px(x)-w*m/2,pz(z)-h*m/2,w*m,h*m); };
+ for(var i=-3;i<=3;i++){ if(!i)continue; bar(i*2.6,-road-2.2,1.5,3.4); bar(i*2.6,road+2.2,1.5,3.4); bar(-road-2.2,i*2.6,3.4,1.5); bar(road+2.2,i*2.6,3.4,1.5); }
+ g.fillStyle='rgba(255,196,64,0.8)';
+ for(var z=-52;z<52;z+=6){ if(Math.abs(z)>road+5)g.fillRect(px(0)-0.09*m,pz(z),0.18*m,3*m); }
+ for(var x=-52;x<52;x+=6){ if(Math.abs(x)>road+5)g.fillRect(px(x),pz(0)-0.09*m,3*m,0.18*m); }
+ g.fillStyle='rgba(190,200,215,0.20)';
+ g.fillRect(0,pz(-2.6),S,0.35*m); g.fillRect(0,pz(2.6),S,0.35*m);
+ var t=new THREE.CanvasTexture(c); t.anisotropy=4; t.encoding=THREE.sRGBEncoding; return t;
+}
+function loadHero(){
+ if(HERO.ready||HERO.loading)return; HERO.loading=true;
+ HERO.group=new THREE.Group();
+ HERO.group.position.copy(heroWorldPos()); HERO.group.scale.setScalar(WORLD);
+ HERO.group.visible=false; scene.add(HERO.group);
+ fetch('hero-tiles/manifest.json').then(function(r){return r.json();}).then(function(man){
+  var chain=Promise.resolve();
+  man.chunks.forEach(function(ch){ chain=chain.then(function(){
+   return fetch('hero-tiles/'+ch.file).then(function(r){return r.arrayBuffer();}).then(function(buf){ HERO.group.add(glbToGroup(buf,false)); });
+  }); });
+  return chain;
+ }).then(function(){ return fetch('hero-tiles/dressing.json').then(function(r){return r.json();}); }).then(function(dj){
+  var srcs={}, chain=Promise.resolve();
+  Object.keys(dj.files).forEach(function(n){ chain=chain.then(function(){
+   return fetch('hero-tiles/'+dj.files[n].file).then(function(r){return r.arrayBuffer();}).then(function(buf){ srcs[n]=glbToGroup(buf,true); });
+  }); });
+  return chain.then(function(){
+   dj.placements.forEach(function(p){ var c=srcs[p.src].clone(); c.position.set(p.pos[0],0,p.pos[1]); c.rotation.y=p.rotY; HERO.group.add(c); });
+  });
+ }).then(function(){
+  /* wait for chunk/dressing textures to actually decode (bounded) so the
+     first hero frame has no black pop-in rectangles */
+  return new Promise(function(res){ var t0=Date.now(); (function chk(){ if(HERO._imgs.every(function(i){return i._done;})||Date.now()-t0>6000)res(); else setTimeout(chk,120); })(); });
+ }).then(function(){
+  var sheet=new THREE.Mesh(new THREE.PlaneGeometry(110,110),new THREE.MeshStandardMaterial({map:heroStreetTexture(),color:new THREE.Color(0x8fa8c8),roughness:.94,metalness:0}));
+  sheet.rotation.x=-Math.PI/2; sheet.position.y=.05; HERO.group.add(sheet);
+  HERO.ready=true; HERO.loading=false;
+  if(HERO.want&&rig.hybrid)heroSetActive(true);
+ }).catch(function(e){ HERO.loading=false; if(window.console)console.warn('hero load failed',e); });
+}
+function heroSetActive(on){
+ HERO.active=on;
+ if(HERO.group)HERO.group.visible=on;
+ if(streetGroup)streetGroup.visible=!on;
+ if(eagleBuildingMesh)eagleBuildingMesh.visible=!on; /* local fallback only */
+ if(eagleRoadMesh)eagleRoadMesh.visible=!on;
+}
+function heroOnEnter(){
+ HERO.want=heroNear(rig.streetPos);
+ if(HERO.want){ if(HERO.ready)heroSetActive(true); else loadHero(); }
+ else if(HERO.active)heroSetActive(false);
+}
+function heroOnExit(){
+ HERO.want=false; HERO.active=false;
+ if(HERO.group)HERO.group.visible=false;
+ if(eagleBuildingMesh)eagleBuildingMesh.visible=true;
+ if(eagleRoadMesh)eagleRoadMesh.visible=true;
+}
+
 /* ================= sector construction ================= */
 function buildSector(){
  buildRoads(); buildBuildings(); buildRoutes(); buildStrongholds(); buildGates(); buildZombies(); buildStreetlights(); buildEvacuees(); buildTraffic(); prepareFires(); createWorldLabels(); buildEntryPortals();
@@ -1295,7 +1422,7 @@ function buildRoads(){
   }
  });
  var g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('color',new THREE.Float32BufferAttribute(cols,3)); g.computeVertexNormals();
- if(!mapMode){ var mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.96,metalness:0})); scene.add(mesh); }
+ if(!mapMode){ var mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.96,metalness:0})); mesh.name='eagleRoads'; eagleRoadMesh=mesh; scene.add(mesh); }
  rig._lampPts=lampPts;
 }
 function buildBuildings(){
@@ -1328,7 +1455,7 @@ function buildBuildings(){
    ' vec3 warm=mix(vec3(1.0,0.70,0.40),vec3(0.72,0.84,1.0),step(0.94,hh));',
    ' totalEmissiveRadiance+=warm*(winM*lit*2.4); }'].join('\n'));
  };
- if(!mapMode){ var mesh=new THREE.Mesh(g,m); scene.add(mesh); }
+ if(!mapMode){ var mesh=new THREE.Mesh(g,m); mesh.name='eagleBuildings'; eagleBuildingMesh=mesh; scene.add(mesh); }
 }
 function buildRoutes(){
  sector.routes.forEach(function(r,idx){
@@ -3366,6 +3493,17 @@ window.__towerDefense={state:state,waves:waves,towers:towers,zombies:zombies,rig
    state.paused=true; var pb=document.getElementById('pauseBtn'); if(pb){ pb.textContent='Resume'; pb.classList.add('active'); }
    return {ok:true,mode:rig.mode,hybrid:!!rig.hybrid,streetPos:{x:+rig.streetPos.x.toFixed(2),z:+rig.streetPos.z.toFixed(2)},zombiePos:{x:+zp.x.toFixed(2),z:+zp.z.toFixed(2)},zombieDist:Math.round(z.dist),route:z.route,loc:document.getElementById('streetLocChip').textContent};
   }catch(err){ return {error:String((err&&err.message)||err)}; } },
+ heroProof:function(){ /* Ticket-12 staging: stand at the Yonge & Dundas anchor facing north so the hero scene frames for screenshots; reports hero state. */
+  try{ resetSim(); var wp=heroWorldPos(), pt=wp.clone();
+   if(mapMode){ beginDiveAt({point:pt,kind:'direct'}); }
+   rig.streetPos.copy(pt); rig.streetPos.y=0;
+   if(!mapMode){ enterHybridStreet(); rig.mode='street'; } /* local path enters hybrid directly; pose as a completed dive or the per-frame eagle guard exits hybrid */
+   rig.streetYaw=0; rig.streetPitch=0; player.faceYaw=0;
+   if(survivor){ survivor.visible=true; survivor.position.copy(rig.streetPos); survivor.rotation.y=0; }
+   return {ok:true,heroReady:HERO.ready,heroActive:HERO.active,heroWant:HERO.want,anchor:{x:+wp.x.toFixed(2),z:+wp.z.toFixed(2)}};
+  }catch(err){ return {error:String((err&&err.message)||err)}; } },
+ heroState:function(){ return {ready:HERO.ready,loading:HERO.loading,active:HERO.active,want:HERO.want,children:HERO.group?HERO.group.children.length:0,mode:rig.mode,hybrid:!!rig.hybrid,sp:[+rig.streetPos.x.toFixed(1),+rig.streetPos.z.toFixed(1)],heroVis:HERO.group?HERO.group.visible:null,sgVis:streetGroup?streetGroup.visible:null}; },
+ shot:function(){ return new Promise(function(res){ if(!streetRenderer){res(null);return;} streetRenderer.render(scene,camera); streetRenderer.domElement.toBlob(function(b){ if(!b){res(null);return;} var r=new FileReader(); r.onload=function(){res(r.result);}; r.readAsDataURL(b); }); }); },
  moveTest:function(){ rig._proofStart={x:rig.streetPos.x,z:rig.streetPos.z}; keys.KeyW=true; return {held:'KeyW',start:rig._proofStart}; },
  moveTestEnd:function(){ keys.KeyW=false; var st=rig._proofStart||{x:rig.streetPos.x,z:rig.streetPos.z}; return {dx:+(rig.streetPos.x-st.x).toFixed(2),dz:+(rig.streetPos.z-st.z).toFixed(2),dist:+Math.hypot(rig.streetPos.x-st.x,rig.streetPos.z-st.z).toFixed(2),streetPos:{x:+rig.streetPos.x.toFixed(2),z:+rig.streetPos.z.toFixed(2)}}; },
  placeNear:function(type,amx,amy){ /* Brief #6 D1b: plausible first-time-player placement — the valid highlighted spot nearest an anchor (a route chokepoint / Union guard post), keeping >= 50 m from towers already placed when possible */

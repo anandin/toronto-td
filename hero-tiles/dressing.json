@@ -1,0 +1,281 @@
+{
+ "files": {
+  "streetcar": {
+   "file": "dressing/streetcar.glb",
+   "tris": 25000,
+   "bytes": 2696716
+  },
+  "storefront": {
+   "file": "dressing/storefront.glb",
+   "tris": 15000,
+   "bytes": 1613324
+  },
+  "barrier": {
+   "file": "dressing/barrier.glb",
+   "tris": 3999,
+   "bytes": 432892
+  },
+  "streetlight": {
+   "file": "dressing/streetlight.glb",
+   "tris": 6000,
+   "bytes": 647436
+  },
+  "sedan-car": {
+   "file": "dressing/sedan-car.glb",
+   "tris": 12000,
+   "bytes": 700840
+  },
+  "wrecked-car": {
+   "file": "dressing/wrecked-car.glb",
+   "tris": 12000,
+   "bytes": 733420
+  },
+  "traffic-light-gantry": {
+   "file": "dressing/traffic-light-gantry.glb",
+   "tris": 10000,
+   "bytes": 733192
+  },
+  "bus-shelter": {
+   "file": "dressing/bus-shelter.glb",
+   "tris": 8000,
+   "bytes": 577864
+  },
+  "dumpster": {
+   "file": "dressing/dumpster.glb",
+   "tris": 6000,
+   "bytes": 380328
+  },
+  "fire-hydrant": {
+   "file": "dressing/fire-hydrant.glb",
+   "tris": 3000,
+   "bytes": 154740
+  },
+  "construction-barrel": {
+   "file": "dressing/construction-barrel.glb",
+   "tris": 2999,
+   "bytes": 164440
+  },
+  "rubble-pile": {
+   "file": "dressing/rubble-pile.glb",
+   "tris": 6000,
+   "bytes": 290272
+  },
+  "sandbag-stack": {
+   "file": "dressing/sandbag-stack.glb",
+   "tris": 6000,
+   "bytes": 307684
+  },
+  "barricade-fence": {
+   "file": "dressing/barricade-fence.glb",
+   "tris": 4000,
+   "bytes": 240996
+  },
+  "concrete-barrier-wall": {
+   "file": "dressing/concrete-barrier-wall.glb",
+   "tris": 5000,
+   "bytes": 362824
+  }
+ },
+ "placements": [
+  {
+   "src": "streetcar",
+   "pos": [
+    5,
+    30
+   ],
+   "rotY": 0.42
+  },
+  {
+   "src": "storefront",
+   "pos": [
+    -6,
+    -15.5
+   ],
+   "rotY": 0
+  },
+  {
+   "src": "storefront",
+   "pos": [
+    4.5,
+    -15.5
+   ],
+   "rotY": 0
+  },
+  {
+   "src": "storefront",
+   "pos": [
+    16,
+    -6
+   ],
+   "rotY": -1.5708
+  },
+  {
+   "src": "barrier",
+   "pos": [
+    -14,
+    2
+   ],
+   "rotY": 0
+  },
+  {
+   "src": "barrier",
+   "pos": [
+    -13.8,
+    5.2
+   ],
+   "rotY": 0
+  },
+  {
+   "src": "barrier",
+   "pos": [
+    -13.6,
+    8.4
+   ],
+   "rotY": 0
+  },
+  {
+   "src": "streetlight",
+   "pos": [
+    -11,
+    -11
+   ],
+   "rotY": 1.5708
+  },
+  {
+   "src": "streetlight",
+   "pos": [
+    11,
+    11
+   ],
+   "rotY": -1.5708
+  },
+  {
+   "src": "sedan-car",
+   "pos": [
+    -7,
+    14
+   ],
+   "rotY": 1.8208
+  },
+  {
+   "src": "wrecked-car",
+   "pos": [
+    13,
+    -6
+   ],
+   "rotY": 0.6708
+  },
+  {
+   "src": "traffic-light-gantry",
+   "pos": [
+    -18,
+    0
+   ],
+   "rotY": 1.5708
+  },
+  {
+   "src": "bus-shelter",
+   "pos": [
+    12,
+    -13
+   ],
+   "rotY": 3.1416
+  },
+  {
+   "src": "dumpster",
+   "pos": [
+    17.5,
+    -11
+   ],
+   "rotY": 0.4
+  },
+  {
+   "src": "fire-hydrant",
+   "pos": [
+    10.5,
+    10.5
+   ],
+   "rotY": 0
+  },
+  {
+   "src": "construction-barrel",
+   "pos": [
+    0,
+    24
+   ],
+   "rotY": 0
+  },
+  {
+   "src": "construction-barrel",
+   "pos": [
+    2.2,
+    25.5
+   ],
+   "rotY": 0.7
+  },
+  {
+   "src": "rubble-pile",
+   "pos": [
+    20,
+    6
+   ],
+   "rotY": 0.3
+  },
+  {
+   "src": "sandbag-stack",
+   "pos": [
+    -6,
+    18
+   ],
+   "rotY": 0.15
+  },
+  {
+   "src": "sandbag-stack",
+   "pos": [
+    -3,
+    18.4
+   ],
+   "rotY": -0.1
+  },
+  {
+   "src": "barricade-fence",
+   "pos": [
+    -16,
+    -3
+   ],
+   "rotY": 1.5708
+  },
+  {
+   "src": "barricade-fence",
+   "pos": [
+    -16,
+    3
+   ],
+   "rotY": 1.5708
+  },
+  {
+   "src": "concrete-barrier-wall",
+   "pos": [
+    19,
+    -4
+   ],
+   "rotY": 1.5708
+  },
+  {
+   "src": "concrete-barrier-wall",
+   "pos": [
+    19,
+    -2.3
+   ],
+   "rotY": 1.5708
+  },
+  {
+   "src": "concrete-barrier-wall",
+   "pos": [
+    19,
+    -0.6
+   ],
+   "rotY": 1.5708
+  }
+ ]
+}

@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Toronto TD — Pencil Sketch look test · Yonge &amp; Dundas</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#e9e2cf;overflow:hidden;font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;}
+  #app{position:fixed;inset:0;}
+  canvas{display:block;}
+  #title{position:fixed;top:14px;left:14px;z-index:5;color:#2c2a26;background:rgba(240,235,218,.82);border:1px solid rgba(44,42,38,.4);
+    padding:8px 12px;border-radius:6px;font-size:11px;letter-spacing:.08em;line-height:1.5;pointer-events:none;}
+  #title b{color:#111;font-size:12px;letter-spacing:.12em;}
+  #title small{color:#6d675a;}
+  #bar{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:5;display:flex;gap:8px;}
+  #bar button{pointer-events:auto;padding:11px 18px;border-radius:7px;border:1px solid rgba(44,42,38,.55);background:rgba(240,235,218,.9);
+    color:#2c2a26;font:700 12px/1 "IBM Plex Mono",monospace;letter-spacing:.07em;cursor:pointer;}
+  #bar button.on{background:#2c2a26;color:#f0ead6;}
+  #load{position:fixed;inset:0;z-index:9;display:grid;place-items:center;background:#e9e2cf;color:#4a463e;
+    font-size:12px;letter-spacing:.14em;transition:opacity .6s;}
+  #load.off{opacity:0;pointer-events:none;}
+  #hint{position:fixed;right:14px;top:14px;z-index:5;color:#6d675a;background:rgba(240,235,218,.7);padding:6px 10px;border-radius:6px;
+    font-size:10px;letter-spacing:.08em;pointer-events:none;}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "./lib3/three.module.js",
+  "three/addons/": "./lib3/addons/"
+} }
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="title"><b>PENCIL SKETCH</b> · TORONTO TD LOOK TEST<br>YONGE &amp; DUNDAS — DRAWN BY HAND<br><small>real footprints · graphite on paper · hatched shade</small></div>
+<div id="hint">DRAG TO LOOK</div>
+<div id="bar">
+  <button id="btnStreet" class="on" type="button">STREET</button>
+  <button id="btnEagle" type="button">EAGLE</button>
+</div>
+<div id="load">SKETCHING THE CITY…</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ============ PENCIL SKETCH — look slice, Yonge & Dundas ============
+   Same scene data as the noir slice; the world is rendered bright and
+   plain, then ONE post pass turns it into graphite on paper:
+   luminance -> hatched shading bands + Sobel drawn edges + paper grain.
+   Frame: metres, origin at the intersection. x east, z SOUTH, y up. */
+
+const PAPER = 0xe9e2cf;
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.NoToneMapping;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(PAPER);
+const FOG_STREET = 0.010, FOG_EAGLE = 0.0038;
+scene.fog = new THREE.FogExp2(PAPER, FOG_STREET);
+
+const camera = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.1, 1600);
+
+/* ---------- lights: bright, even, like a studio over a drawing board ---------- */
+const hemi = new THREE.HemisphereLight(0xfff6e0, 0x8a8378, 1.55); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff1d6, 1.25);
+sun.position.set(-60, 120, 40);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -130; sun.shadow.camera.right = 130;
+sun.shadow.camera.top = 130; sun.shadow.camera.bottom = -130;
+sun.shadow.camera.far = 320; sun.shadow.bias = -0.0006;
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0xfff6e0, 0.55); fill.position.set(50, 30, 90); scene.add(fill);
+const heroSpot = new THREE.SpotLight(0xffe9c4, 160, 34, 0.62, 0.6, 1.6);
+heroSpot.position.set(6, 9.2, 10);
+heroSpot.target.position.set(4.2, 0, 7.2);
+scene.add(heroSpot, heroSpot.target);
+
+/* ---------- canvas helpers ---------- */
+function cnv(w, h){ const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d')]; }
+
+/* graphite facade: one canvas tile = 24 m x 24 m of wall */
+function facadeTexture(base, seed){
+  let s = seed; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const [c, g] = cnv(512, 512);
+  g.fillStyle = base; g.fillRect(0, 0, 512, 512);
+  const cols = 8, rows = 8, cw = 512/cols, ch = 512/rows;
+  for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++){
+    const x = i*cw + cw*0.22, y = j*ch + ch*0.2, w = cw*0.56, h = ch*0.6;
+    const r = rnd();
+    g.fillStyle = r < 0.30 ? '#9a9482' : (r < 0.40 ? '#6d675a' : '#e2dcc8');
+    g.fillRect(x, y, w, h);
+    g.strokeStyle = 'rgba(30,28,25,0.85)'; g.lineWidth = 2.4; g.strokeRect(x, y, w, h);
+    if (r >= 0.30 && r < 0.40){ g.fillStyle = 'rgba(20,19,17,0.3)'; g.fillRect(x, y + h*0.55, w, h*0.45); }
+  }
+  for (let k = 0; k < 20; k++){ // pencil smudge streaks
+    g.fillStyle = `rgba(60,56,48,${0.03 + rnd()*0.05})`;
+    const x = rnd()*512; g.fillRect(x, 0, 2 + rnd()*6, 512);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1/24, 1/24);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
+const facadeVariants = ['#d8d2bf', '#d0c9b2', '#ded8c6'].map((b, i) =>
+  new THREE.MeshStandardMaterial({ map: facadeTexture(b, 1237 + i * 3100), roughness:.92, metalness:0 }));
+const roofMat = new THREE.MeshStandardMaterial({ color:0x9a9484, roughness:1 });
+
+/* ---------- the city from real footprints ---------- */
+fetch('noir-buildings.json').then(r => r.json()).then(list => {
+  list.forEach((b, idx) => {
+    let cx = 0, cy = 0; b.pts.forEach(p => { cx += p[0]; cy += p[1]; }); cx /= b.pts.length; cy /= b.pts.length;
+    if ((Math.abs(cx) < 16 && Math.abs(cy) < 75) || (Math.abs(cy) < 16 && Math.abs(cx) < 75)) return; // road corridors
+    const shape = new THREE.Shape();
+    b.pts.forEach((p, i) => { if (i === 0) shape.moveTo(p[0], p[1]); else shape.lineTo(p[0], p[1]); });
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: Math.max(6, b.h), bevelEnabled:false });
+    geo.rotateX(-Math.PI/2);
+    const mesh = new THREE.Mesh(geo, [roofMat, facadeVariants[idx % 3]]);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    scene.add(mesh);
+  });
+}).catch(e => console.warn('buildings', e));
+
+/* ---------- ground: paper lots + graphite streets ---------- */
+const base = new THREE.Mesh(new THREE.PlaneGeometry(900, 900),
+  new THREE.MeshStandardMaterial({ color:0xcfc8b2, roughness:1 }));
+base.rotation.x = -Math.PI/2; base.position.y = -0.05; base.receiveShadow = true; scene.add(base);
+
+function streetTexture(){
+  const [c, g] = cnv(512, 512);
+  g.fillStyle = '#a39c8a'; g.fillRect(0, 0, 512, 512);
+  const rnd = Math.random;
+  for (let i = 0; i < 4200; i++){ g.fillStyle = `rgba(43,40,36,${rnd()*0.07})`; g.fillRect(rnd()*512, rnd()*512, 1.6, 1.6); }
+  g.fillStyle = 'rgba(43,40,36,0.6)';
+  for (let y = 8; y < 512; y += 64) g.fillRect(253, y, 6, 34);   // centre dashes
+  g.fillRect(52, 0, 4, 512); g.fillRect(456, 0, 4, 512);        // lane edges
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
+function street(w, l, rx, ry){
+  const t = streetTexture(); t.repeat.set(rx, ry);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, l),
+    new THREE.MeshStandardMaterial({ map:t, roughness:1 }));
+  m.rotation.x = -Math.PI/2; m.position.y = 0.02; m.receiveShadow = true; scene.add(m);
+}
+street(26, 460, 1, 18); street(460, 26, 18, 1);
+(function crosswalks(){
+  const [c, g] = cnv(256, 256); g.clearRect(0,0,256,256);
+  g.fillStyle = 'rgba(43,40,36,0.4)';
+  for (let i = 0; i < 6; i++) g.fillRect(14 + i*40, 10, 22, 236);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshStandardMaterial({ map:t, transparent:true, roughness:1 });
+  [[0,-15.5,0],[0,15.5,0],[-15.5,0,Math.PI/2],[15.5,0,Math.PI/2]].forEach(([x,z,r]) => {
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(24, 5.4), mat);
+    p.rotation.x = -Math.PI/2; p.rotation.z = r; p.position.set(x, 0.05, z); scene.add(p);
+  });
+})();
+
+/* ---------- shopfronts: paper band, graphite frames ---------- */
+function shopBand(w, x, z, ry){
+  const [c, g] = cnv(1024, 96);
+  g.fillStyle = '#ddd6c2'; g.fillRect(0, 0, 1024, 96);
+  const greys = ['#a49d88', '#7c7663', '#b3ac97', '#6b6555', '#98927e'];
+  for (let i = 0; i < 5; i++){
+    const x0 = 18 + i * 200;
+    g.fillStyle = greys[i]; g.fillRect(x0, 10, 160, 78);
+    g.fillStyle = 'rgba(25,23,20,0.5)';
+    for (let k = 0; k < 4; k++) g.fillRect(x0 + 14 + k * 38, 52, 22, 36);
+    g.strokeStyle = 'rgba(25,23,20,0.9)'; g.lineWidth = 3; g.strokeRect(x0, 10, 160, 78);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, 3.6, 0.7),
+    new THREE.MeshStandardMaterial({ map:t, roughness:.85 }));
+  m.position.set(x, 1.8, z); m.rotation.y = ry; m.castShadow = true; scene.add(m);
+}
+shopBand(24, -8, -13.6, 0); shopBand(24, 14, -13.6, 0); shopBand(24, -4, 13.6, Math.PI);
+shopBand(20, 13.6, -2, -Math.PI/2); shopBand(20, -13.6, 5, Math.PI/2);
+
+/* ---------- signs: graphite on paper boards ---------- */
+function sign(text, w, x, y, z, ry, vertical=false){
+  const h = vertical ? w * text.length * 0.92 : w * 0.34;
+  const [c, g] = cnv(vertical ? 128 : 512, vertical ? 512 : 128);
+  g.fillStyle = '#efe9d6'; g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = '#2a2823'; g.lineWidth = 5; g.strokeRect(6, 6, c.width-12, c.height-12);
+  g.fillStyle = '#23211d'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  if (vertical){ g.font = '700 74px "Arial Narrow", Arial'; [...text].forEach((ch, i) => g.fillText(ch, 64, 52 + i * (456/Math.max(1, text.length-0.4)))); }
+  else { g.font = '700 64px "Arial Narrow", Arial'; g.fillText(text, 256, 68); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+    new THREE.MeshStandardMaterial({ map:t, side:THREE.DoubleSide, roughness:.9 }));
+  m.position.set(x, y, z); m.rotation.y = ry; scene.add(m);
+}
+sign('EATON', 11, 15.5, 8.5, -13.5, -Math.PI/2);
+sign('YONGE', 3.2, 13.2, 9.5, 12.5, Math.PI, true);
+sign('DUNDAS SQ', 10, -14.0, 7.5, -12.0, Math.PI/2);
+sign('RAMEN', 2.6, -12.6, 6.5, 11.0, 0, true);
+sign('PHARMACY', 7, -14.5, 5.0, 14.5, Math.PI/2);
+sign('CINEMA', 8, 16.0, 10.5, 16.0, -Math.PI/2);
+
+/* CN Tower — a light pencil landmark in the distance */
+(function cnTower(){
+  const [c, g] = cnv(128, 512);
+  g.fillStyle = '#8f8a7c';
+  g.beginPath(); g.moveTo(56, 512); g.lineTo(63, 150); g.lineTo(52, 118); g.lineTo(76, 118); g.lineTo(65, 150); g.lineTo(72, 512); g.fill();
+  g.fillStyle = '#6d675a'; g.fillRect(60, 96, 8, 26);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(90, 360),
+    new THREE.MeshBasicMaterial({ map:t, transparent:true, fog:false, side:THREE.DoubleSide }));
+  m.position.set(-330, 150, 560); scene.add(m);
+})();
+
+/* ---------- dressing props ---------- */
+const loader = new GLTFLoader();
+fetch('hero-tiles/dressing.json').then(r => r.json()).then(d => {
+  const cache = {};
+  d.placements.filter(p => p.src !== 'storefront').forEach(p => {
+    const src = 'hero-tiles/dressing/' + p.src + (p.src.endsWith('.glb') ? '' : '.glb');
+    if (!cache[src]) cache[src] = loader.loadAsync(src).catch(() => null);
+    cache[src].then(gltf => { if (!gltf) return;
+      const o = gltf.scene.clone(true);
+      o.position.set(p.pos[0], 0, p.pos[1]); o.rotation.y = p.rotY;
+      o.traverse(n => { if (n.isMesh){ n.castShadow = true; n.receiveShadow = true; } });
+      scene.add(o);
+    });
+  });
+}).catch(e => console.warn('dressing', e));
+
+/* ---------- survivor + zombies ---------- */
+const mixers = []; const drifters = [];
+function actor(path, x, z, ry, clip, scaleTo = 1.8, drift = null){
+  loader.loadAsync(path).then(gltf => {
+    const root = gltf.scene;
+    let geoH = 1; root.traverse(n => { if (n.isMesh && n.geometry){ n.geometry.computeBoundingBox(); const bb = n.geometry.boundingBox; geoH = Math.max(geoH, bb.max.y - bb.min.y); n.castShadow = true; n.frustumCulled = false; } });
+    root.scale.setScalar(scaleTo / geoH);
+    root.position.set(x, 0, z); root.rotation.y = ry;
+    scene.add(root);
+    const mx = new THREE.AnimationMixer(root);
+    const act = THREE.AnimationClip.findByName(gltf.animations, clip);
+    if (act) mx.clipAction(act).play();
+    mixers.push(mx);
+    if (drift){ root.userData.drift = drift; drifters.push(root); }
+    return root;
+  }).catch(e => console.warn('actor', path, e));
+}
+actor('chars/survivor.glb', 4.2, 7.2, Math.PI, 'idle', 1.78);
+actor('chars/zombie.glb', -12, -17, Math.PI/2, 'walk', 1.85, { from:-13, to:13, speed:0.7 });
+actor('chars/zombie.glb', 12, -44, -Math.PI/2, 'walk', 1.85, { from:13, to:-13, speed:-0.45 });
+
+/* ---------- rain: faint pencil strokes ---------- */
+const RAIN = 1600, rainPos = new Float32Array(RAIN * 3);
+for (let i = 0; i < RAIN; i++){ rainPos[i*3] = (Math.random()-0.5) * 130; rainPos[i*3+1] = Math.random() * 42; rainPos[i*3+2] = (Math.random()-0.5) * 130; }
+const rainGeo = new THREE.BufferGeometry();
+rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+const rainTex = (() => { const [c, g] = cnv(16, 64); const gr = g.createLinearGradient(0, 0, 0, 64);
+  gr.addColorStop(0, 'rgba(90,85,72,0)'); gr.addColorStop(0.5, 'rgba(90,85,72,0.8)'); gr.addColorStop(1, 'rgba(90,85,72,0)');
+  g.fillStyle = gr; g.fillRect(6, 0, 4, 64); return new THREE.CanvasTexture(c); })();
+const rain = new THREE.Points(rainGeo, new THREE.PointsMaterial({ map:rainTex, size:1.5, transparent:true, opacity:.22, depthWrite:false, color:0x6d675a }));
+scene.add(rain);
+
+/* ---------- post: the pencil ---------- */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const SketchShader = {
+  uniforms: { tDiffuse:{ value:null }, time:{ value:0 }, res:{ value:new THREE.Vector2(innerWidth, innerHeight) } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float time; uniform vec2 res; varying vec2 vUv;
+    float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float hatch(vec2 uv, float ang, float spacing){
+      vec2 d = vec2(cos(ang), sin(ang));
+      float wob = sin(uv.y * 40.0 + uv.x * 23.0) * 0.6;         // hand wobble
+      float p = dot(uv * res, d) / spacing + wob;
+      float f = abs(fract(p) - 0.5) * 2.0;
+      return smoothstep(0.55, 0.95, f);                          // 1 in the gaps, 0 on the line
+    }
+    void main(){
+      vec2 px = 1.0 / res;
+      float c  = lum(texture2D(tDiffuse, vUv).rgb);
+      float tl = lum(texture2D(tDiffuse, vUv + vec2(-px.x,  px.y)).rgb);
+      float t  = lum(texture2D(tDiffuse, vUv + vec2( 0.0,    px.y)).rgb);
+      float tr = lum(texture2D(tDiffuse, vUv + vec2( px.x,  px.y)).rgb);
+      float l  = lum(texture2D(tDiffuse, vUv + vec2(-px.x,  0.0)).rgb);
+      float r  = lum(texture2D(tDiffuse, vUv + vec2( px.x,  0.0)).rgb);
+      float bl = lum(texture2D(tDiffuse, vUv + vec2(-px.x, -px.y)).rgb);
+      float b  = lum(texture2D(tDiffuse, vUv + vec2( 0.0,   -px.y)).rgb);
+      float br = lum(texture2D(tDiffuse, vUv + vec2( px.x, -px.y)).rgb);
+      float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;
+      float gy = -bl - 2.0*b - br + tl + 2.0*t + tr;
+      float edge = clamp(sqrt(gx*gx + gy*gy) * 2.6, 0.0, 1.0);
+
+      float ink = (1.0 - c) * 0.32;                               // soft tonal base
+      float h1 = hatch(vUv,  0.62, 3.4);
+      float h2 = hatch(vUv,  0.62 + 1.05, 3.9);
+      float h3 = hatch(vUv, -0.45, 4.4);
+      if (c < 0.85) ink += (1.0 - h1) * 0.24 * smoothstep(0.85, 0.65, c);
+      if (c < 0.65) ink += (1.0 - h2) * 0.24 * smoothstep(0.65, 0.45, c);
+      if (c < 0.45) ink += (1.0 - h3) * 0.26 * smoothstep(0.45, 0.25, c);
+      if (c < 0.22) ink += 0.22;
+      ink += edge * 0.85;                                        // drawn outlines
+      ink = clamp(ink, 0.0, 1.0);
+
+      vec3 paper = vec3(0.945, 0.918, 0.847);
+      vec3 graphite = vec3(0.145, 0.137, 0.125);
+      vec3 col = mix(paper, graphite, ink);
+      col += (hash(vUv * res) - 0.5) * 0.045;                    // paper grain
+      vec2 d = vUv - 0.5;
+      col *= 1.0 - dot(d, d) * 0.16;                             // faint edge falloff
+      gl_FragColor = vec4(col, 1.0);
+    }`
+};
+const sketch = new ShaderPass(SketchShader); composer.addPass(sketch);
+composer.addPass(new OutputPass());
+
+/* ---------- camera: street / eagle (same choreography as the noir slice) ---------- */
+let view = 'street';
+let yaw = 0.12, pitch = 0.06, dist = 6.4, dragging = false, px = 0, py = 0, idleT = 0;
+const pivot = new THREE.Vector3(4.2, 1.55, 7.2);
+let eagleT = 0;
+const _camPos = new THREE.Vector3(), _look = new THREE.Vector3(), _eaglePos = new THREE.Vector3(), _origin = new THREE.Vector3(0, 0, 0);
+function applyCam(t, dt){
+  eagleT = THREE.MathUtils.clamp(eagleT + (view === 'eagle' ? dt / 1.6 : -dt / 1.2), 0, 1);
+  const e = eagleT * eagleT * (3 - 2 * eagleT);
+  const drift = idleT > 4 ? Math.sin(t * 0.11) * 0.05 : 0;
+  const y = yaw + drift, p = pitch + Math.sin(t * 0.07) * 0.008;
+  _camPos.set(
+    pivot.x + Math.sin(y) * Math.cos(p) * dist,
+    pivot.y + Math.sin(p) * dist + 0.25,
+    pivot.z + Math.cos(y) * Math.cos(p) * dist);
+  _look.set(pivot.x - Math.sin(y) * 8, pivot.y - 0.25, pivot.z - Math.cos(y) * 8);
+  if (e > 0){
+    _eaglePos.set(Math.sin(t * 0.02) * 55, 125, 125);
+    _camPos.lerp(_eaglePos, e); _look.lerp(_origin, e);
+    scene.fog.density = THREE.MathUtils.lerp(FOG_STREET, FOG_EAGLE, e);
+    hemi.intensity = THREE.MathUtils.lerp(0.95, 1.15, e);
+  }
+  camera.position.copy(_camPos);
+  camera.lookAt(_look);
+}
+renderer.domElement.addEventListener('pointerdown', e => { dragging = true; px = e.clientX; py = e.clientY; idleT = 0; });
+addEventListener('pointermove', e => { if (!dragging) return;
+  yaw -= (e.clientX - px) * 0.0042; pitch = THREE.MathUtils.clamp(pitch + (e.clientY - py) * 0.003, -0.12, 0.5);
+  px = e.clientX; py = e.clientY; idleT = 0; });
+addEventListener('pointerup', () => dragging = false);
+addEventListener('wheel', e => { dist = THREE.MathUtils.clamp(dist + e.deltaY * 0.01, 3.4, 15); }, { passive:true });
+
+const btnS = document.getElementById('btnStreet'), btnE = document.getElementById('btnEagle');
+function setView(v){ view = v;
+  btnS.classList.toggle('on', v === 'street'); btnE.classList.toggle('on', v === 'eagle');
+  if (v !== 'eagle') scene.fog.density = FOG_STREET;
+}
+btnS.onclick = () => setView('street'); btnE.onclick = () => setView('eagle');
+
+/* ---------- loop ---------- */
+const clock = new THREE.Clock();
+let firstFrames = 0;
+function tick(){
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  idleT += dt;
+  mixers.forEach(m => m.update(dt));
+  drifters.forEach(r => { const d = r.userData.drift; r.position.x += d.speed * dt;
+    if (d.speed > 0 && r.position.x > d.to) r.position.x = d.from;
+    if (d.speed < 0 && r.position.x < d.to) r.position.x = d.from; });
+  const pa = rain.geometry.attributes.position;
+  for (let i = 0; i < RAIN; i++){ let y = pa.getY(i) - dt * 26; if (y < 0) y = 42; pa.setY(i, y); }
+  pa.needsUpdate = true;
+  rain.position.x = camera.position.x * 0.6; rain.position.z = camera.position.z * 0.6;
+  sketch.uniforms.time.value = t;
+  applyCam(t, dt);
+  composer.render();
+  if (++firstFrames === 12) document.getElementById('load').classList.add('off');
+}
+tick();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+  sketch.uniforms.res.value.set(innerWidth, innerHeight);
+});
+
+/* QA hooks */
+window.__noir = {
+  setView,
+  snap(){ eagleT = view === 'eagle' ? 1 : 0; },
+  eagleT(){ return eagleT; },
+  shot(){ composer.render(); return renderer.domElement.toDataURL('image/png'); },
+  state(){ return { view, camPos: camera.position.toArray().map(v => +v.toFixed(1)), children: scene.children.length,
+    drifters: drifters.map(r => [+(r.position.x.toFixed(1)), +(r.position.z.toFixed(1))]), mixers: mixers.length }; }
+};
+</script>
+</body>
+</html>

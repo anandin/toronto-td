@@ -59,6 +59,8 @@
   #btnStart{background:#2c2a26 !important;color:#f0ead6 !important;font-weight:700 !important;font-size:11px !important;text-align:center !important;min-width:118px;}
   #btnStart b{color:#f0ead6 !important;}
   #btnStart:disabled{background:rgba(240,235,218,.92) !important;color:#2c2a26 !important;}
+  #gateWarn{display:none;width:100%;margin-top:7px;padding:7px 8px;border-radius:5px;border:1px solid #7a2a20;
+    background:#a62b1f;color:#f5e9d5;font:700 10px/1.3 "IBM Plex Mono",monospace;letter-spacing:.08em;cursor:pointer;pointer-events:auto;}
   #selInfo{align-self:center;color:#2c2a26;background:rgba(240,235,218,.85);border:1px solid rgba(44,42,38,.4);
     padding:8px 10px;border-radius:6px;font-size:10px;letter-spacing:.08em;display:none;}
 </style>
@@ -76,6 +78,7 @@
 <div id="bar">
   <button id="btnStreet" class="on" type="button">STREET</button>
   <button id="btnEagle" type="button">EAGLE</button>
+  <button id="btnDrop" type="button" style="display:none">DROP ▸</button>
 </div>
 <div id="load">PAINTING THE CITY…</div>
 <div id="hudTL"><div class="card"><b id="hudWave">WAVE 1</b><br><span id="hudKills">KILLS 0 · ALIVE 0</span></div></div>
@@ -83,12 +86,13 @@
 <div id="ammo" class="card"><div id="ammoNum">12</div><small>RIFLE · R RELOAD</small></div>
 <div id="cross"></div>
 <div id="banner"><div id="bannerMain"></div><div id="bannerSub"></div></div>
-<div id="controls" class="card">WASD MOVE · CLICK FIRE · R RELOAD · DRAG LOOK · EAGLE = COMMAND VIEW</div>
+<div id="controls" class="card">WASD MOVE · CLICK = MOUSE-LOOK + FIRE · R RELOAD · E RETURN TO GATE · EAGLE = COMMAND (WHEEL ZOOM · CLICK GROUND TO DROP)</div>
 <div id="vig"></div>
 <div id="hudGate" class="card">
   <span>SALVAGE <b id="salvNum">130</b></span><span id="phaseChip">BUILD</span>
   <div style="margin-top:3px">YONGE GATE · <span id="gateText">255</span> / 255 HP</div>
   <div id="gatebar"><div id="gatefill"></div></div>
+  <button id="gateWarn" type="button">⚠ GATE EXPOSED — E · RETURN TO GATE</button>
 </div>
 <div id="buildbar">
   <button class="tcard" id="tc-barricade" type="button"><b>BARRICADE</b><span class="cost">30 salvage</span> · blocker · key 1</button>
@@ -116,7 +120,7 @@ import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
    luminance -> hatched shading bands + Sobel drawn edges + paper grain.
    Frame: metres, origin at the intersection. x east, z SOUTH, y up. */
 
-const PAPER = 0x8f8474;
+const PAPER = 0x7d8489;   /* shop law: fog = slate teal-grey, the sun's complement */
 const app = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -134,7 +138,7 @@ scene.fog = new THREE.FogExp2(PAPER, FOG_STREET);
 const camera = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.1, 6000);
 
 /* ---------- lights: bright, even, like a studio over a drawing board ---------- */
-const hemi = new THREE.HemisphereLight(0x74949a, 0x35322e, 1.42); scene.add(hemi);
+const hemi = new THREE.HemisphereLight(0x74949a, 0x30363a, 1.42);   /* bounce stays neutral-cool: one warm source only */ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffa257, 1.85);
 sun.position.set(-85, 52, -25);
 sun.castShadow = true;
@@ -258,7 +262,7 @@ new THREE.TextureLoader().load('ground-skin.jpg', t => {
   hole.moveTo(-112, -112); hole.lineTo(112, -112); hole.lineTo(112, 112); hole.lineTo(-112, 112); hole.closePath();
   shape.holes.push(hole);
   const g = new THREE.ShapeGeometry(shape, 1); g.rotateX(-Math.PI / 2);
-  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: t, roughness: 1 }));
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: t, roughness: 1, color: 0x9db4bc }));   // shop law: the baked skin runs warm — cool it back to slate
   m.position.y = 0.25; scene.add(m);
   window.__skin = true;
 });
@@ -378,8 +382,9 @@ function shopBand(w, x, z, ry){
     new THREE.MeshStandardMaterial({ map:t, roughness:.85 }));
   m.position.set(x, 1.8, z); m.rotation.y = ry; m.castShadow = true; scene.add(m);
 }
-shopBand(24, -8, -13.6, 0); shopBand(24, 14, -13.6, 0);
-shopBand(20, 13.6, -2, -Math.PI/2); shopBand(20, -13.6, 5, Math.PI/2);
+shopBand(13, -19.5, -13.6, 0); shopBand(13, 19.5, -13.6, 0);
+shopBand(17, 13.6, -22, -Math.PI/2); shopBand(15, 13.6, 21, -Math.PI/2);
+shopBand(17, -13.6, -22, Math.PI/2); shopBand(15, -13.6, 21, Math.PI/2);
 
 /* ---------- signs: graphite on paper boards ---------- */
 function sign(text, w, x, y, z, ry, vertical=false){
@@ -639,7 +644,7 @@ function setSurvAction(name){
 }
 
 const G = { wave:0, hp:100, mag:12, reloading:false, reloadT:0, kills:0, deaths:0,
-            phase:'boot', queue:[], spawnT:0, breatherT:0, lastHurt:-99, time:0 };
+            phase:'boot', queue:[], spawnT:0, breatherT:0, lastHurt:-99, time:0, lastShot:-1, spawnGrace:0 };
 const zombies = [];
 const ZT = { walker:{ hp:38, speed:2.2, h:1.85 }, runner:{ hp:34, speed:3.6, h:1.8 }, tank:{ hp:260, speed:1.3, h:2.75 } };
 const SPAWNS = [[0,-72],[8,-66],[-8,-66],[0,72],[6,68],[-6,68],[72,0],[66,8],[-72,0],[-66,-8]];
@@ -651,7 +656,8 @@ addEventListener('keydown', e => { keys[e.code] = true;
   if (e.code === 'Digit2') togglePlacing('marksman');
   if (e.code === 'Digit3') togglePlacing('siren');
   if (e.code === 'Escape'){ TD.placing = null; TD.selected = null; syncTowers(); }
-  if (e.code === 'Space'){ if (G.phase === 'build') startNextWave(); else if (G.phase === 'victory') continueEndless(); } });
+  if (e.code === 'Space'){ if (G.phase === 'build') startNextWave(); else if (G.phase === 'victory') continueEndless(); }
+  if (e.code === 'KeyE'){ doDrop(4.2, 7.2); if (view !== 'street') setView('street'); } });
 addEventListener('keyup', e => { keys[e.code] = false; });
 
 /* HUD */
@@ -663,7 +669,7 @@ let bannerT = 0, vig = 0, lastHud = '';
 function showBanner(main, sub){ bannerMain.textContent = main; bannerSub.textContent = sub || ''; bannerEl.style.opacity = '1'; bannerT = 2.2; }
 function aliveCount(){ let n = 0; for (const z of zombies) if (z.state === 'alive') n++; return n; }
 const salvEl = el('salvNum'), gateTextEl = el('gateText'), gateFillEl = el('gatefill'), phaseEl = el('phaseChip'),
-      btnStartEl = el('btnStart'), btnSellEl = el('btnSell'), btnContinueEl = el('btnContinue'), selInfoEl = el('selInfo');
+      btnStartEl = el('btnStart'), btnSellEl = el('btnSell'), btnContinueEl = el('btnContinue'), selInfoEl = el('selInfo'), gateWarnEl = el('gateWarn');
 let lastHud2 = '';
 function updateHUD(){
   const s = G.wave + '|' + Math.ceil(G.hp) + '|' + G.mag + '|' + G.kills + '|' + aliveCount() + '|' + G.reloading;
@@ -675,7 +681,8 @@ function updateHUD(){
     ammoEl.classList.toggle('low', !G.reloading && G.mag <= 3);
   }
   const s2 = TD.salvage + '|' + Math.ceil(TD.gateHP) + '|' + G.phase + '|' + Math.ceil(TD.buildT) + '|' + TD.placing
-           + '|' + (TD.selected ? TD.selected.pad : -1) + '|' + towers.length + '|' + G.wave;
+           + '|' + (TD.selected ? TD.selected.pad : -1) + '|' + towers.length + '|' + G.wave
+           + '|' + (Math.hypot(SURV.pos.x, SURV.pos.z - GATE_Z) > 60 ? 1 : 0);
   if (s2 === lastHud2) return; lastHud2 = s2;
   salvEl.textContent = TD.salvage;
   gateTextEl.textContent = Math.max(0, Math.ceil(TD.gateHP));
@@ -689,6 +696,7 @@ function updateHUD(){
     b.classList.toggle('poor', TD.salvage < TDEFS[t].cost);
   }
   el('btnRepair').classList.toggle('poor', TD.salvage < 1 || TD.gateHP >= TD.gateMax);
+  gateWarnEl.style.display = (G.phase === 'defend' && Math.hypot(SURV.pos.x, SURV.pos.z - GATE_Z) > 60) ? 'block' : 'none';
   if (TD.selected){
     const t = TD.selected;
     selInfoEl.style.display = 'block';
@@ -742,27 +750,55 @@ function startWave(n){
 }
 const ZDPS = { walker:4, runner:3, tank:11 };   /* gate-chew dps — game.html zombieDefs.gateDps */
 const ZSALVAGE = { walker:2, runner:3, tank:25 };
-function spawnZombie(entry){
-  if (!zTemplate) return false;
-  const type = entry.t, spec = ZT[type];
+function makeZombieMesh(type){
+  const spec = ZT[type];
   const root = skeletonClone(zTemplate.scene);
   const mats = [];
   root.traverse(n => { if (n.isMesh){ n.material = n.material.clone();
     if ('emissive' in n.material){ n.material.emissive = new THREE.Color(0xff2a1a); n.material.emissiveIntensity = 0; }
     mats.push(n.material); n.castShadow = false; n.frustumCulled = false; } });
   root.scale.setScalar(spec.h / zGeoH);
-  const off = Math.random() * 11 - 5.5, off2 = Math.random() * 8 - 4;
-  let wp;
-  if (entry.lane === 'N'){ root.position.set(off, 0, -72); wp = [[off, -40], [off, GATE_Z - 2.1]]; }
-  else if (entry.lane === 'W'){ root.position.set(-72, 0, off2); wp = [[-38, off2], [off, off2], [off, GATE_Z - 2.1]]; }
-  else { root.position.set(72, 0, off2); wp = [[38, off2], [off, off2], [off, GATE_Z - 2.1]]; }
-  scene.add(root);
   const mx = new THREE.AnimationMixer(root);
   const walkC = THREE.AnimationClip.findByName(zTemplate.animations, 'walk');
   if (walkC){ const a = mx.clipAction(walkC); a.time = Math.random() * 1.5; a.play(); }
-  zombies.push({ root, mixer:mx, mats, type, hp:spec.hp, speed:spec.speed, h:spec.h,
+  return { root, mx, mats };
+}
+function spawnZombie(entry){
+  if (!zTemplate) return false;
+  const type = entry.t, spec = ZT[type];
+  const parts = makeZombieMesh(type);
+  const root = parts.root;
+  const off = Math.random() * 11 - 5.5, off2 = Math.random() * 8 - 4;
+  let wp;
+  if (entry.lane === 'N'){ root.position.set(off, groundHeight(off, -48), -48); wp = [[off, -30], [off, GATE_Z - 2.1]]; }
+  else if (entry.lane === 'W'){ root.position.set(-48, groundHeight(-48, off2), off2); wp = [[-30, off2], [off, off2], [off, GATE_Z - 2.1]]; }
+  else { root.position.set(48, groundHeight(48, off2), off2); wp = [[30, off2], [off, off2], [off, GATE_Z - 2.1]]; }
+  scene.add(root);
+  zombies.push({ root, mixer:parts.mx, mats:parts.mats, type, hp:spec.hp, speed:spec.speed, h:spec.h,
                  flashT:0, atkCd:0.5 + Math.random() * 0.5, state:'alive', dieT:0,
-                 wp, wpI:0, chewing:false, gateDps:ZDPS[type], slowT:0 });
+                 wp, wpI:0, chewing:false, gateDps:ZDPS[type], slowT:0,
+                 ambient:false, stuckT:0, lastDist:1e9 });
+  return true;
+}
+/* FIX 7c — ambient shamblers: ~4 always wandering within ~45 m of the survivor,
+   wherever he is; hostile inside 12 m. The street is never empty. */
+function spawnAmbient(){
+  if (!zTemplate) return false;
+  let x = SURV.pos.x + 42, z = SURV.pos.z;
+  for (let k = 0; k < 8; k++){
+    const a = Math.random() * Math.PI * 2, rr = 38 + Math.random() * 10;
+    const cx = SURV.pos.x + Math.cos(a) * rr, cz = SURV.pos.z + Math.sin(a) * rr;
+    x = cx; z = cz;
+    if (!gridBlocked(cx, cz)) break;
+  }
+  const parts = makeZombieMesh('walker');
+  parts.root.position.set(x, groundHeight(x, z), z);
+  scene.add(parts.root);
+  zombies.push({ root:parts.root, mixer:parts.mx, mats:parts.mats, type:'walker', hp:ZT.walker.hp,
+                 speed:ZT.walker.speed * 0.55, baseSpeed:ZT.walker.speed, h:ZT.walker.h,
+                 flashT:0, atkCd:0.5 + Math.random() * 0.5, state:'alive', dieT:0,
+                 wp:null, wpI:0, chewing:false, gateDps:ZDPS.walker, slowT:0,
+                 ambient:true, wanderT:0, wTarget:null, stuckT:0, lastDist:1e9 });
   return true;
 }
 function removeZombie(i){
@@ -785,22 +821,30 @@ function damageZombie(z, dmg, dir){
   if (z.hp <= 0 && z.state === 'alive'){ z.state = 'dying'; z.dieT = 0; G.kills++; TD.salvage += ZSALVAGE[z.type]; }
 }
 function damageSurvivor(dmg){
+  if (G.time < G.spawnGrace) return;   /* respawn grace — the horde cannot camp the corner spawn */
   G.hp -= dmg; G.lastHurt = G.time; vig = Math.max(vig, 0.35);
   if (G.hp <= 0){
     G.deaths++; vig = 1;
     const pen = Math.floor(TD.salvage * 0.10); TD.salvage -= pen;   /* the original rule: death costs 10% of salvage */
     SURV.pos.set(4.2, 0, 7.2); G.hp = 100; G.lastHurt = G.time;
+    G.spawnGrace = G.time + 3;
+    for (const zn of zombies){
+      if (zn.state !== 'alive') continue;
+      const dx = zn.root.position.x - 4.2, dz = zn.root.position.z - 7.2, d = Math.hypot(dx, dz);
+      if (d < 5.5 && d > 0.01){ zn.root.position.x = 4.2 + dx / d * 5.5; zn.root.position.z = 7.2 + dz / d * 5.5; }
+    }
     showBanner('DOWN', 'back at the corner · −' + pen + ' salvage');
   }
 }
 function fire(){
   if (!SURV.root || view !== 'street' || eagleT >= 0.5 || G.reloading || fireCd > 0) return;
   if (G.mag <= 0){ startReload(); return; }
-  fireCd = 0.13; G.mag--;
+  fireCd = 0.13; G.mag--; G.lastShot = G.time; gunKick = 0.07;
   raycaster.setFromCamera(CENTER2, camera);
   const ray = raycaster.ray;
   muzzle.intensity = 30;
-  muzzle.position.set(SURV.pos.x + ray.direction.x * 0.7, 1.45, SURV.pos.z + ray.direction.z * 0.7);
+  muzzleTip.getWorldPosition(_mv);
+  muzzle.position.copy(_mv);
   let best = 1e9, hit = null;
   for (const z of zombies){
     if (z.state !== 'alive') continue;
@@ -810,6 +854,8 @@ function fire(){
     if (ray.distanceSqToPoint(_c) < 1.1 && tProj < best){ best = tProj; hit = z; }
   }
   if (hit) damageZombie(hit, 13, ray.direction);
+  if (hit) _hv.set(hit.root.position.x, hit.h * 0.55, hit.root.position.z); else ray.at(80, _hv);
+  fireTracer(_mv.x, _mv.y, _mv.z, _hv.x, _hv.y, _hv.z);
   if (G.mag === 0) startReload();
 }
 renderer.domElement.addEventListener('pointerdown', e => { if (e.button === 0 && !handlePadTap(e)) fire(); });
@@ -840,8 +886,16 @@ function stepGame(dt){
       SURV.pos.x += mx * SURV.speed * dt; SURV.pos.z += mz * SURV.speed * dt;
       SURV.root.rotation.y = Math.atan2(mx, mz);
     }
+    resolveCollisions(SURV.pos, 0.45);
     const bob = (!SURV.actions.move && moving) ? Math.abs(Math.sin(G.time * 11)) * 0.055 : 0;
-    SURV.root.position.set(SURV.pos.x, bob, SURV.pos.z);
+    SURV.root.position.set(SURV.pos.x, groundHeight(SURV.pos.x, SURV.pos.z) + bob, SURV.pos.z);
+    if (gunGrp){
+      const ry2 = SURV.root.rotation.y, fx2 = Math.sin(ry2), fz2 = Math.cos(ry2), rx2 = Math.cos(ry2), rz2 = -Math.sin(ry2);
+      gunKick = Math.max(0, gunKick - dt * 0.45);
+      gunGrp.position.set(SURV.pos.x + rx2 * 0.27 + fx2 * (0.24 - gunKick),
+        SURV.root.position.y + 1.3, SURV.pos.z + rz2 * 0.27 + fz2 * (0.24 - gunKick));
+      gunGrp.rotation.set(0, ry2, 0);
+    }
     setSurvAction(moving ? 'move' : 'idle');
     pivot.set(SURV.pos.x, 1.55, SURV.pos.z);
   }
@@ -851,7 +905,7 @@ function stepGame(dt){
 
   /* wave state machine: build -> defend -> (victory | build) ; defeat ends the run */
   if (G.phase === 'boot'){
-    if (SURV.root && zTemplate){ G.phase = 'build'; TD.buildT = BUILD_TIME; showBanner('HOLD THE GATE', 'build your defence — wave 1 inbound'); }
+    if (SURV.root && zTemplate){ G.phase = 'build'; TD.buildT = FIRST_BUILD; showBanner('HOLD THE GATE', 'build your defence — wave 1 inbound'); }
   } else if (G.phase === 'build'){
     TD.buildT -= dt;
     if (TD.buildT <= 0) startNextWave();
@@ -860,7 +914,16 @@ function stepGame(dt){
     if (G.queue.length && aliveCount() < 24 && G.spawnT <= 0){
       if (spawnZombie(G.queue[0])){ G.queue.shift(); G.spawnT = 0.7; }
     }
-    if (!G.queue.length && aliveCount() === 0) waveCleared();
+    if (!G.queue.length && zombies.every(z => z.ambient || z.state !== 'alive')) waveCleared();
+  }
+
+  /* ambient maintainer: top the shamblers back up to 4 around the survivor */
+  if (zTemplate && SURV.root && G.phase !== 'boot'){
+    TD.ambT -= dt;
+    if (TD.ambT <= 0){
+      let amb = 0; for (const z of zombies) if (z.ambient && z.state === 'alive') amb++;
+      if (amb < 4){ TD.ambT = spawnAmbient() ? 1.2 : 0.5; } else TD.ambT = 0.8;
+    }
   }
 
   stepTowers(dt);
@@ -881,6 +944,23 @@ function stepGame(dt){
       if (z.dieT >= 1) removeZombie(i);
       continue;
     }
+    if (z.ambient){
+      const ax = z.root.position.x, az = z.root.position.z;
+      const dS = Math.hypot(SURV.pos.x - ax, SURV.pos.z - az);
+      if (dS < 12){
+        if (dS > 1.6) stepToward(z, SURV.pos.x, SURV.pos.z, z.baseSpeed * (z.slowT > 0 ? SIREN_SLOW : 1), dt);
+        else { z.atkCd -= dt; if (z.atkCd <= 0){ z.atkCd = 0.9; damageSurvivor(12); } }
+      } else {
+        z.wanderT -= dt;
+        if (!z.wTarget || z.wanderT <= 0 || Math.hypot(z.wTarget[0] - ax, z.wTarget[1] - az) < 1.2){
+          const a = Math.random() * Math.PI * 2, rr = 8 + Math.random() * 30;
+          z.wTarget = [SURV.pos.x + Math.cos(a) * rr, SURV.pos.z + Math.sin(a) * rr];
+          z.wanderT = 5 + Math.random() * 4;
+        }
+        stepToward(z, z.wTarget[0], z.wTarget[1], z.speed * (z.slowT > 0 ? SIREN_SLOW : 1), dt);
+      }
+      continue;
+    }
     const zx = z.root.position.x, zz = z.root.position.z;
     const dSurv = Math.hypot(SURV.pos.x - zx, SURV.pos.z - zz);
     /* a barricade in the face is a wall: stop and chew it (only barricades block) */
@@ -895,8 +975,11 @@ function stepGame(dt){
       blocker.hp -= z.gateDps * dt;
       if (blocker.hp <= 0) destroyTower(blocker);
     } else if (z.chewing){
-      /* at the gate: chew it — only a survivor on top of them breaks the chew */
-      if (dSurv < 3.5 && !TD.defeat){
+      /* chewing only counts AT the gate: a zombie flagged early by the stuck
+         safety net resumes routing instead of chewing the air */
+      const fw = z.wp[z.wp.length - 1];
+      if (Math.hypot(fw[0] - zx, fw[1] - zz) > 2.6 && dSurv >= 3.5){ z.chewing = false; z.wpI = z.wp.length - 1; }
+      else if (dSurv < 3.5 && !TD.defeat){
         stepToward(z, SURV.pos.x, SURV.pos.z, spd, dt);
         z.atkCd -= dt;
         if (dSurv <= 1.7 && z.atkCd <= 0){ z.atkCd = 0.9; damageSurvivor(12); }
@@ -905,8 +988,10 @@ function stepGame(dt){
         TD.gateHP -= z.gateDps * dt;
         if (TD.gateHP <= 0){ TD.gateHP = 0; onDefeat(); }
       }
-    } else if (dSurv < 10){
-      /* target of opportunity: the stage-2 seek, kept inside 10 m */
+    } else if (G.time >= G.spawnGrace && dSurv < (Math.hypot(z.wp[z.wp.length - 1][0] - zx, z.wp[z.wp.length - 1][1] - zz) < 6 ? 3.5 : 4)){
+      /* target of opportunity only when he is in their face (4 m) — the horde's
+         job is the gate; a zombie within 6 m of the gate line only breaks off
+         for a survivor on top of it (3.5 m), the chew branch's discipline */
       if (dSurv > 1.6) stepToward(z, SURV.pos.x, SURV.pos.z, spd, dt);
       else { z.atkCd -= dt; if (z.atkCd <= 0){ z.atkCd = 0.9; damageSurvivor(12); } }
     } else {
@@ -930,6 +1015,27 @@ function stepGame(dt){
         b.root.position.x += dx * push; b.root.position.z += dz * push; }
     }
   }
+  /* PHASE B post pass: the whole horde collides and stands on the ground */
+  for (const z of zombies){
+    if (z.state !== 'alive') continue;
+    resolveCollisions(z.root.position, 0.45);
+    z.root.position.y = groundHeight(z.root.position.x, z.root.position.z);
+    if (!z.ambient && !z.chewing && z.wp && z.wpI < z.wp.length){
+      const wp = z.wp[z.wpI];
+      const dWp = Math.hypot(wp[0] - z.root.position.x, wp[1] - z.root.position.z);
+      if (z.wpI === z.wp.length - 1 && dWp < 1.5) z.chewing = true;
+      else if (dWp < z.lastDist - 0.02){ z.lastDist = dWp; z.stuckT = 0; }
+      else { z.stuckT += dt;
+        if (z.stuckT > 5 && dWp < 6){ z.stuckT = 0; z.lastDist = 1e9; z.wpI++; if (z.wpI >= z.wp.length) z.chewing = true; } }
+    }
+  }
+  if (detailPatch){
+    const out = Math.abs(SURV.pos.x) > 112 || Math.abs(SURV.pos.z) > 112;
+    detailPatch.visible = out;
+    if (out) detailPatch.position.set(SURV.pos.x, groundHeight(SURV.pos.x, SURV.pos.z) + 0.03, SURV.pos.z);
+    dropProps.visible = dropPropsOn && out;
+  }
+  updateContactFX();
   updateHUD();
 }
 
@@ -939,14 +1045,14 @@ function stepGame(dt){
    The horde routes down the avenues to it; the survivor is a target of
    opportunity inside 10 m. Palette law (brown-watch): steel, concrete,
    brass accents — the sun stays the only warm source; no new warm lights. */
-const GATE_Z = 18, BUILD_TIME = 30, SIREN_SLOW = 0.55;
+const GATE_Z = 18, BUILD_TIME = 30, FIRST_BUILD = 8, SIREN_SLOW = 0.55;
 const TDEFS = {
   barricade: { name:'BARRICADE', cost:30, hp:90 },                          /* hull — game.html towerDefs */
   marksman:  { name:'MARKSMAN',  cost:60, range:38, dmg:52, rate:1.08 },   /* dmg/rate — game.html marksman */
   siren:     { name:'SIREN',     cost:40, range:14 },                      /* aura — zombies at 55% speed */
 };
 const TD = { salvage:130, gateHP:255, gateMax:255, buildT:BUILD_TIME,
-             placing:null, selected:null, victory:false, defeat:false, endless:false };
+             placing:null, selected:null, victory:false, defeat:false, endless:false, ambT:0 };
 const towers = [];
 const gameG = new THREE.Group(); scene.add(gameG);   /* scene-level: visible in street AND eagle */
 
@@ -998,7 +1104,7 @@ const markerMat = new THREE.MeshBasicMaterial({ color:0x9fd4d8, transparent:true
     m.rotation.x = -Math.PI / 2; m.position.set(x, 0.07, z); gameG.add(m); };
   mk(7.5, 92, 0, -28); mk(74, 7.5, -39, 0); mk(74, 7.5, 39, 0);
   const ringGeo = new THREE.RingGeometry(2.1, 3.0, 32);
-  [[0,-72],[-72,0],[72,0]].forEach(([x, z]) => { const m = new THREE.Mesh(ringGeo, markerMat);
+  [[0,-48],[-48,0],[48,0]].forEach(([x, z]) => { const m = new THREE.Mesh(ringGeo, markerMat);
     m.rotation.x = -Math.PI / 2; m.position.set(x, 0.09, z); gameG.add(m); });
 })();
 
@@ -1120,7 +1226,7 @@ function continueEndless(){ if (G.phase !== 'victory') return; TD.endless = true
 function resetRun(){
   for (let i = towers.length - 1; i >= 0; i--) destroyTower(towers[i]);
   for (let i = zombies.length - 1; i >= 0; i--) removeZombie(i);
-  TD.salvage = 130; TD.gateHP = TD.gateMax; TD.buildT = BUILD_TIME;
+  TD.salvage = 130; TD.gateHP = TD.gateMax; TD.buildT = FIRST_BUILD;
   TD.placing = null; TD.selected = null; TD.victory = false; TD.defeat = false; TD.endless = false;
   G.wave = 0; G.kills = 0; G.hp = 100; G.mag = 12; G.reloading = false; G.phase = 'build';
   showBanner('HOLD THE GATE', 'build your defence — wave 1 inbound');
@@ -1197,6 +1303,7 @@ el('btnRepair').onclick = () => {
 el('btnSell').onclick = () => { if (TD.selected) sellTower(TD.selected); };
 el('btnStart').onclick = () => { if (G.phase === 'build') startNextWave(); else if (G.phase === 'defeat') resetRun(); };
 el('btnContinue').onclick = () => continueEndless();
+gateWarnEl.onclick = () => { doDrop(4.2, 7.2); if (view !== 'street') setView('street'); };
 
 /* Factory-law hooks */
 window.__game = {
@@ -1207,7 +1314,17 @@ window.__game = {
     towers: towers.map(t => ({ type: t.type, pad: t.pad, hp: Math.ceil(t.hp) })),
     victory: TD.victory, defeat: TD.defeat, endless: TD.endless, placing: TD.placing,
     atGate: zombies.reduce((n, z) => n + (z.chewing && z.state === 'alive' ? 1 : 0), 0),
-    queued: G.queue.length }; },
+    queued: G.queue.length,
+    groundY: +groundHeight(SURV.pos.x, SURV.pos.z).toFixed(2),
+    eagleRadius: Math.round(eagleRadius), dropTarget: [+dropTarget.x.toFixed(1), +dropTarget.y.toFixed(1)],
+    collidersOn: !!occGrid, lastShot: +G.lastShot.toFixed(2),
+    ambient: zombies.reduce((n, z) => n + (z.ambient && z.state === 'alive' ? 1 : 0), 0),
+    ambientNear: zombies.reduce((n, z) => n + (z.ambient && z.state === 'alive' &&
+      Math.hypot(z.root.position.x - SURV.pos.x, z.root.position.z - SURV.pos.z) < 60 ? 1 : 0), 0),
+    horde: zombies.filter(z => z.state === 'alive').map(z => [+z.root.position.x.toFixed(1), +z.root.position.z.toFixed(1), z.ambient ? 1 : 0]),
+    nearestGate: (() => { let b = -1; for (const z of zombies){ if (z.ambient || z.state !== 'alive') continue;
+      const d = Math.hypot(z.root.position.x, z.root.position.z - (GATE_Z - 2.1)); if (b < 0 || d < b) b = d; }
+      return b < 0 ? -1 : +b.toFixed(1); })() }; },
   spawnWave(n){ startWave(Math.max(1, n | 0)); },
   hurt(x){ damageSurvivor(x || 10); },
   giveAmmo(){ G.mag = 12; G.reloading = false; },
@@ -1224,6 +1341,259 @@ window.__game = {
   warp(x, z){ SURV.pos.set(+x || 0, 0, +z || 0); },
   reset(){ resetRun(); }
 };
+
+
+/* ================= PHASE B — GROUND, COLLISION, GUN, DROPS =================
+   Fixes from Anand's play-test: actors collide, feet stay on the real
+   ground layer, the survivor carries a rifle, the eagle is a command
+   camera, and you can drop anywhere — not just the corner. */
+
+/* ---- FIX 2: one ground height, matching the layers that are actually drawn.
+   Core hole (|x|,|z| <= 112): street sheets 0.02, plaza slab top 0.53, lots -0.38.
+   Outside: the ground skin at 0.25. ~3 m smooth blend across the seam. ---- */
+function groundHeight(x, z){
+  const ax = Math.abs(x), az = Math.abs(z);
+  let core;
+  const pdx = Math.max(14 - x, 0, x - 106), pdz = Math.max(10 - z, 0, z - 78);
+  const pd = Math.hypot(pdx, pdz);                       // distance outside the plaza rect
+  if (pd < 1.5){
+    const baseH = (ax <= 13 || az <= 13) ? 0.02 : -0.38;
+    core = pd <= 0 ? 0.53 : THREE.MathUtils.lerp(0.53, baseH, pd / 1.5);
+  }
+  else if (ax <= 13 || az <= 13) core = 0.02;
+  else core = -0.38;
+  const d = Math.max(ax, az);
+  if (d <= 112) return core;
+  if (d >= 115) return 0.25;
+  const t = (d - 112) / 3, sm = t * t * (3 - 2 * t);
+  return core + (0.25 - core) * sm;
+}
+
+/* ---- FIX 1: occupancy grid over the sector, rasterized from the same
+   footprints (and the same skip rules) the city renderer uses. ---- */
+const GRID_MIN = -2000, GRID_CELL = 2, GRID_N = 2000;
+let occGrid = null;
+fetch('city-buildings.json').then(r => r.json()).then(list => {
+  const g = new Uint8Array(GRID_N * GRID_N);
+  const inPoly = (pts, x, z) => { let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++){
+      const xi = pts[i][0], zi = pts[i][1], xj = pts[j][0], zj = pts[j][1];
+      if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) inside = !inside;
+    } return inside; };
+  for (const b of list){
+    if (b.h > 320) continue;
+    let cx = 0, cy = 0; b.pts.forEach(p => { cx += p[0]; cy += p[1]; }); cx /= b.pts.length; cy /= b.pts.length;
+    if (Math.abs(cx) > 2000 || Math.abs(cy) > 2000) continue;
+    if (Math.hypot(cx, cy) < 120 && ((Math.abs(cx) < 16 && Math.abs(cy) < 75) || (Math.abs(cy) < 16 && Math.abs(cx) < 75))) continue;
+    if (Math.hypot(cx + 420, cy + 1360) < 115) continue;
+    if (cx > -100 && cx < -11 && cy < -8 && cy > -310) continue;
+    if (cx > 12 && cx < 130 && cy < -8 && cy > -100) continue;
+    const wpts = b.pts.map(p => [p[0], -p[1]]);          // shape frame -> world (z south)
+    let x1 = 1e9, z1 = 1e9, x2 = -1e9, z2 = -1e9;
+    for (const [wx, wz] of wpts){ x1 = Math.min(x1, wx); x2 = Math.max(x2, wx); z1 = Math.min(z1, wz); z2 = Math.max(z2, wz); }
+    const c1x = Math.max(0, ((x1 - GRID_MIN) / GRID_CELL) | 0), c2x = Math.min(GRID_N - 1, ((x2 - GRID_MIN) / GRID_CELL) | 0);
+    const c1z = Math.max(0, ((z1 - GRID_MIN) / GRID_CELL) | 0), c2z = Math.min(GRID_N - 1, ((z2 - GRID_MIN) / GRID_CELL) | 0);
+    for (let gz = c1z; gz <= c2z; gz++) for (let gx = c1x; gx <= c2x; gx++){
+      const wx = GRID_MIN + (gx + 0.5) * GRID_CELL, wz = GRID_MIN + (gz + 0.5) * GRID_CELL;
+      if (inPoly(wpts, wx, wz)) g[gz * GRID_N + gx] = 1;
+    }
+  }
+  occGrid = g; window.__gridReady = true;
+  console.log('occupancy grid ready');
+}).catch(e => console.warn('grid', e));
+function gridBlocked(x, z){
+  if (!occGrid) return false;
+  const cx = ((x - GRID_MIN) / GRID_CELL) | 0, cz = ((z - GRID_MIN) / GRID_CELL) | 0;
+  if (cx < 0 || cz < 0 || cx >= GRID_N || cz >= GRID_N) return false;
+  return occGrid[cz * GRID_N + cx] === 1;
+}
+
+/* explicit colliders: hero masses, shop bands, the gate (world AABBs) */
+const BOX_COLLIDERS = [
+  { x1:-52,   z1:12,    x2:-14,   z2:300 },    // Eaton Centre mass
+  { x1:-108,  z1:36,    x2:-78,   z2:276 },    // mall back slab
+  { x1:-81,   z1:38,    x2:-55,   z2:274 },    // galleria vault
+  { x1:16,    z1:80,    x2:112,   z2:132 },    // 10 Dundas East
+  { x1:14.4,  z1:11.4,  x2:19.6,  z2:16.6 },   // media pillar
+  { x1:-26,   z1:-13.95, x2:-13,   z2:-13.25 }, // shop bands — segments stop at the roadway openings
+  { x1:13,    z1:-13.95, x2:26,    z2:-13.25 },
+  { x1:13.25, z1:-30.5,  x2:13.95, z2:-13.5 },
+  { x1:13.25, z1:13.5,   x2:13.95, z2:28.5 },
+  { x1:-13.95, z1:-30.5, x2:-13.25, z2:-13.5 },
+  { x1:-13.95, z1:13.5,  x2:-13.25, z2:28.5 },
+  { x1:-10.6, z1:16.6,  x2:10.6,  z2:19.4 },   // the Yonge Gate
+];
+const CAR_OBB = { x:-1, z:0.5, rot:0.85, hx:1.6, hz:7.5 };   // the jack-knifed streetcar
+function pushOutBox(p, r, x1, z1, x2, z2){
+  const qx = Math.max(x1, Math.min(p.x, x2)), qz = Math.max(z1, Math.min(p.z, z2));
+  const dx = p.x - qx, dz = p.z - qz, d2 = dx * dx + dz * dz;
+  if (d2 > 1e-9){ if (d2 < r * r){ const d = Math.sqrt(d2); p.x = qx + dx / d * r; p.z = qz + dz / d * r; } }
+  else {
+    const pl = p.x - x1 + r, pr = x2 - p.x + r, pt = p.z - z1 + r, pb = z2 - p.z + r;
+    const m = Math.min(pl, pr, pt, pb);
+    if (m === pl) p.x = x1 - r; else if (m === pr) p.x = x2 + r;
+    else if (m === pt) p.z = z1 - r; else p.z = z2 + r;
+  }
+}
+function resolveCollisions(p, r){
+  for (let pass = 0; pass < 2; pass++){
+    if (occGrid){
+      const c1x = Math.max(0, ((p.x - r - GRID_MIN) / GRID_CELL) | 0), c2x = Math.min(GRID_N - 1, ((p.x + r - GRID_MIN) / GRID_CELL) | 0);
+      const c1z = Math.max(0, ((p.z - r - GRID_MIN) / GRID_CELL) | 0), c2z = Math.min(GRID_N - 1, ((p.z + r - GRID_MIN) / GRID_CELL) | 0);
+      for (let gz = c1z; gz <= c2z; gz++) for (let gx = c1x; gx <= c2x; gx++){
+        if (!occGrid[gz * GRID_N + gx]) continue;
+        const bx1 = GRID_MIN + gx * GRID_CELL, bz1 = GRID_MIN + gz * GRID_CELL;
+        pushOutBox(p, r, bx1, bz1, bx1 + GRID_CELL, bz1 + GRID_CELL);
+      }
+    }
+    for (const b of BOX_COLLIDERS) pushOutBox(p, r, b.x1, b.z1, b.x2, b.z2);
+    { // streetcar OBB: resolve in the car's local frame
+      const dx = p.x - CAR_OBB.x, dz = p.z - CAR_OBB.z;
+      const cs = Math.cos(CAR_OBB.rot), sn = Math.sin(CAR_OBB.rot);
+      let lx = dx * cs - dz * sn, lz = dx * sn + dz * cs;
+      const qx = Math.max(-CAR_OBB.hx, Math.min(lx, CAR_OBB.hx)), qz = Math.max(-CAR_OBB.hz, Math.min(lz, CAR_OBB.hz));
+      if (qx === lx && qz === lz){
+        const pl = lx + CAR_OBB.hx + r, pr = CAR_OBB.hx - lx + r, pt = lz + CAR_OBB.hz + r, pb = CAR_OBB.hz - lz + r;
+        const m = Math.min(pl, pr, pt, pb);
+        if (m === pl) lx = -CAR_OBB.hx - r; else if (m === pr) lx = CAR_OBB.hx + r;
+        else if (m === pt) lz = -CAR_OBB.hz - r; else lz = CAR_OBB.hz + r;
+      } else {
+        const ddx = lx - qx, ddz = lz - qz, d2 = ddx * ddx + ddz * ddz;
+        if (d2 < r * r && d2 > 1e-9){ const d = Math.sqrt(d2); lx = qx + ddx / d * r; lz = qz + ddz / d * r; }
+      }
+      p.x = CAR_OBB.x + lx * cs + lz * sn;
+      p.z = CAR_OBB.z - lx * sn + lz * cs;
+    }
+    for (const tw of towers){
+      const tr = tw.type === 'barricade' ? 1.35 : 1.1, rr = tr + r;
+      const dx = p.x - tw.x, dz = p.z - tw.z, d2 = dx * dx + dz * dz;
+      if (d2 < rr * rr && d2 > 1e-6){ const d = Math.sqrt(d2); p.x = tw.x + dx / d * rr; p.z = tw.z + dz / d * rr; }
+    }
+  }
+}
+
+/* ---- FIX 4: the rifle. Primitives, dark steel, one warm wood grip.
+   A scene-level group placed from the survivor's pos + facing every frame —
+   deliberately NOT parented to the GLB: the survivor root is non-uniformly
+   scaled by the loader, and the idle clip holds his hands at his sides, so a
+   hand-bone attach would hang the gun at his hip pointing down. A chest-height
+   offset reads "held at ready" in every clip. ---- */
+const gunGrp = new THREE.Group(); scene.add(gunGrp);
+let gunKick = 0, muzzleTip = null;
+const _mv = new THREE.Vector3(), _hv = new THREE.Vector3();
+(function buildGun(){
+  const steel = new THREE.MeshStandardMaterial({ color:0x2e3236, roughness:.45, metalness:.55 });
+  const steel2 = new THREE.MeshStandardMaterial({ color:0x1f2225, roughness:.5, metalness:.5 });
+  const wood = new THREE.MeshStandardMaterial({ color:0x6e4f30, roughness:.8 });
+  const add = (geo, mat, x, y, z, rx) => { const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z); if (rx) m.rotation.x = rx; gunGrp.add(m); return m; };
+  add(new THREE.BoxGeometry(0.09, 0.15, 0.6), steel, 0, 0, 0.02);                       // receiver
+  add(new THREE.CylinderGeometry(0.024, 0.024, 0.52, 8), steel2, 0, 0.035, 0.55, Math.PI / 2); // barrel
+  add(new THREE.BoxGeometry(0.07, 0.24, 0.13), steel2, 0, -0.17, 0.1).rotation.x = 0.15;        // magazine
+  add(new THREE.BoxGeometry(0.075, 0.13, 0.3), steel, 0, -0.02, -0.36);                 // stock
+  add(new THREE.BoxGeometry(0.07, 0.17, 0.09), wood, 0, -0.15, -0.08).rotation.x = 0.35;         // grip — the one warm accent
+  add(new THREE.BoxGeometry(0.02, 0.08, 0.02), steel2, 0, 0.11, 0.34);                  // sight post
+  add(new THREE.BoxGeometry(0.1, 0.05, 0.12), steel2, 0, 0.09, -0.05);                  // rear sight
+  muzzleTip = new THREE.Object3D(); muzzleTip.position.set(0, 0.035, 0.84); gunGrp.add(muzzleTip);
+})();
+
+/* ---- FIX 6: relocatable street detail + dressing ring + drop marker ---- */
+const detailPatch = (() => {
+  const t = streetTexture(); t.repeat.set(3, 3);
+  const m = new THREE.Mesh(new THREE.CircleGeometry(35, 40), new THREE.MeshStandardMaterial({ map:t, roughness:1 }));
+  m.rotation.x = -Math.PI / 2; m.visible = false; m.receiveShadow = true; scene.add(m); return m;
+})();
+const dropMark = (() => {
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.RingGeometry(2.3, 3.1, 36),
+    new THREE.MeshBasicMaterial({ color:0x9fd4d8, transparent:true, opacity:0.9, depthWrite:false, side:THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2; g.add(ring);
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(0.5, 20),
+    new THREE.MeshBasicMaterial({ color:0x9fd4d8, transparent:true, opacity:0.9, depthWrite:false }));
+  disc.rotation.x = -Math.PI / 2; disc.position.y = 0.02; g.add(disc);
+  g.visible = false; scene.add(g); return g;
+})();
+const dropProps = new THREE.Group(); scene.add(dropProps);
+let dropPropsReady = false, dropPropsOn = false;
+const DROP_PROP_SRCS = ['barrier','sedan-car','wrecked-car','dumpster','streetlight','sandbag-stack','rubble-pile','construction-barrel'];
+function dressDrop(x, z){
+  const outside = Math.abs(x) > 112 || Math.abs(z) > 112;
+  dropPropsOn = outside; dropProps.visible = outside;
+  if (!outside) return;
+  const place = () => {
+    let i = 0;
+    for (const o of dropProps.children){
+      let placed = false;
+      for (let k = 0; k < 8 && !placed; k++){
+        const a = (i / Math.max(1, dropProps.children.length)) * Math.PI * 2 + k * 0.7 + Math.random() * 0.4;
+        const rr = 17 + Math.random() * 13;
+        const cx = x + Math.cos(a) * rr, cz = z + Math.sin(a) * rr;
+        if (!gridBlocked(cx, cz) && Math.hypot(cx - x, cz - z) > 9){
+          o.position.set(cx, groundHeight(cx, cz), cz); o.rotation.y = Math.random() * Math.PI * 2; placed = true;
+        }
+      }
+      if (!placed) o.position.set(x + 20 + i * 3, groundHeight(x + 20 + i * 3, z), z);
+      i++;
+    }
+  };
+  if (dropPropsReady){ place(); return; }
+  let loaded = 0;
+  const done = () => { if (++loaded === DROP_PROP_SRCS.length){ dropPropsReady = true; place(); } };
+  for (const src of DROP_PROP_SRCS){
+    loader.loadAsync('hero-tiles/dressing/' + src + '.glb').then(gltf => {
+      const o = gltf.scene; o.traverse(n => { if (n.isMesh) n.castShadow = false; });
+      dropProps.add(o); done();
+    }).catch(done);
+  }
+}
+function doDrop(x, z){
+  SURV.pos.set(x, 0, z);
+  dropTarget.set(x, z); dropDirty = false; dropMark.visible = false;
+  dressDrop(x, z);
+  for (const zn of zombies){
+    if (zn.ambient && zn.state === 'alive'){
+      const a = Math.random() * Math.PI * 2, rr = 38 + Math.random() * 10;
+      zn.root.position.set(x + Math.cos(a) * rr, 0, z + Math.sin(a) * rr);
+      zn.root.position.y = groundHeight(zn.root.position.x, zn.root.position.z);
+      zn.wTarget = null;
+    }
+  }
+  showBanner('ON THE GROUND', 'free-roam — the gate is at Yonge & Dundas');
+}
+
+/* ---- FIX 2b: contact shadows (pooled discs, no shadow-map cost) +
+   FIX 7d: red horde rings that read from the eagle ---- */
+const shadowPool = [], ringPool = [];
+(function buildContactFX(){
+  const sGeo = new THREE.CircleGeometry(0.55, 20);
+  const sMat = new THREE.MeshBasicMaterial({ color:0x06080a, transparent:true, opacity:0.34, depthWrite:false });
+  const rGeo = new THREE.RingGeometry(0.78, 1.02, 24);
+  const rMat = new THREE.MeshBasicMaterial({ color:0xd23b2a, transparent:true, opacity:0.85, depthWrite:false, side:THREE.DoubleSide });
+  for (let i = 0; i < 30; i++){
+    const sm = new THREE.Mesh(sGeo, sMat); sm.rotation.x = -Math.PI / 2; sm.visible = false; scene.add(sm); shadowPool.push(sm);
+    const rm = new THREE.Mesh(rGeo, rMat); rm.rotation.x = -Math.PI / 2; rm.visible = false; scene.add(rm); ringPool.push(rm);
+  }
+})();
+function updateContactFX(){
+  let i = 0;
+  const put = (x, z, scale) => {
+    if (i >= 30) return;
+    const gy = groundHeight(x, z);
+    const sm = shadowPool[i]; sm.visible = true; sm.position.set(x, gy + 0.03, z); sm.scale.setScalar(scale);
+    const rm = ringPool[i]; rm.visible = eagleT > 0.5; rm.position.set(x, gy + 0.05, z); rm.scale.setScalar(scale);
+    i++;
+  };
+  if (SURV.root) put(SURV.pos.x, SURV.pos.z, 1);
+  for (const z of zombies) if (z.state === 'alive') put(z.root.position.x, z.root.position.z, z.type === 'tank' ? 1.8 : 1);
+  for (; i < 30; i++){ shadowPool[i].visible = false; ringPool[i].visible = false; }
+}
+
+const _groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+Object.assign(window.__game, {
+  setEagleRadius(r){ eagleRadius = THREE.MathUtils.clamp(+r || 540, 120, 1400); },
+  dropAt(x, z){ doDrop(+x || 0, +z || 0); setView('street'); },
+  warpTo(x, z){ SURV.pos.set(+x || 0, 0, +z || 0); }
+});
 
 /* ---------- post: the pencil ---------- */
 const composer = new EffectComposer(renderer);
@@ -1270,6 +1640,7 @@ const SketchShader = {
       col += (hash(vUv * res) - 0.5) * 0.028;                     // canvas grain
       vec2 d = vUv - 0.5;
       col *= 1.0 - dot(d, d) * 0.3;
+      col = mix(col, col * vec3(0.93, 1.0, 1.07), (1.0 - g) * 0.38);   // cool reserve: shadows fall teal, never tan
       col = mix(col, vec3(0.85, 0.74, 0.55), uWash * 0.38);   // the paint-wash that hides the world swap
       gl_FragColor = vec4(col, 1.0);
     }`
@@ -1283,6 +1654,9 @@ let yaw = 0.12, pitch = 0.06, dist = 6.4, dragging = false, px = 0, py = 0, idle
 const pivot = new THREE.Vector3(4.2, 1.55, 7.2);
 let eagleT = 0;
 const _camPos = new THREE.Vector3(), _look = new THREE.Vector3(), _eaglePos = new THREE.Vector3(), _origin = new THREE.Vector3(-40, 0, 120);
+let eagleAng = 0.35, eagleRadius = 540;
+const dropTarget = new THREE.Vector2(4.2, 7.2); let dropDirty = false;
+let downX = 0, downY = 0, downT = 0, mouseLocked = false;
 function applyCam(t, dt){
   eagleT = THREE.MathUtils.clamp(eagleT + (view === 'eagle' ? dt / 1.6 : -dt / 1.2), 0, 1);
   const e = eagleT * eagleT * (3 - 2 * eagleT);
@@ -1293,8 +1667,9 @@ function applyCam(t, dt){
     pivot.y + Math.sin(p) * dist + 0.25,
     pivot.z + Math.cos(y) * Math.cos(p) * dist);
   _look.set(pivot.x - Math.sin(y) * 8, pivot.y - 0.25, pivot.z - Math.cos(y) * 8);
+  eagleAng = t * 0.02 + 0.35;
   if (e > 0){
-    _eaglePos.set(_origin.x + Math.sin(t * 0.02 + 0.35) * 540, 500, _origin.z + Math.cos(t * 0.02 + 0.35) * 540);
+    _eaglePos.set(_origin.x + Math.sin(eagleAng) * eagleRadius, eagleRadius * 0.93, _origin.z + Math.cos(eagleAng) * eagleRadius);
     _camPos.lerp(_eaglePos, e); _look.lerp(_origin, e);
     scene.fog.density = THREE.MathUtils.lerp(FOG_STREET, FOG_EAGLE, e);
     hemi.intensity = THREE.MathUtils.lerp(1.42, 1.5, e);
@@ -1302,19 +1677,57 @@ function applyCam(t, dt){
   camera.position.copy(_camPos);
   camera.lookAt(_look);
 }
-renderer.domElement.addEventListener('pointerdown', e => { dragging = true; px = e.clientX; py = e.clientY; idleT = 0; });
-addEventListener('pointermove', e => { if (!dragging) return;
-  yaw -= (e.clientX - px) * 0.0042; pitch = THREE.MathUtils.clamp(pitch + (e.clientY - py) * 0.003, -0.12, 0.5);
+renderer.domElement.addEventListener('pointerdown', e => { dragging = true; px = e.clientX; py = e.clientY; idleT = 0;
+  downX = e.clientX; downY = e.clientY; downT = performance.now();
+  /* FIX 3: click the street canvas = pointer lock mouse-look (drag stays as fallback) */
+  if (view === 'street' && !mouseLocked && e.button === 0 && !TD.placing){
+    try { const pr = renderer.domElement.requestPointerLock(); if (pr && pr.catch) pr.catch(() => {}); } catch (err) {}
+  } });
+addEventListener('pointermove', e => { if (!dragging || mouseLocked) return;
+  const dx = e.clientX - px, dy = e.clientY - py;
+  if (view === 'eagle' && eagleT > 0.5){
+    /* FIX 5: drag pans the command camera across the sector */
+    const k = eagleRadius * 0.0016, ca = Math.cos(eagleAng), sa = Math.sin(eagleAng);
+    _origin.x = THREE.MathUtils.clamp(_origin.x - (ca * dx - sa * dy) * k, -1500, 1500);
+    _origin.z = THREE.MathUtils.clamp(_origin.z - (-sa * dx - ca * dy) * k, -1500, 1500);
+  } else {
+    yaw -= dx * 0.0042; pitch = THREE.MathUtils.clamp(pitch + dy * 0.003, -0.12, 0.5);
+  }
   px = e.clientX; py = e.clientY; idleT = 0; });
-addEventListener('pointerup', () => dragging = false);
-addEventListener('wheel', e => { dist = THREE.MathUtils.clamp(dist + e.deltaY * 0.01, 3.4, 15); }, { passive:true });
+document.addEventListener('pointerlockchange', () => { mouseLocked = document.pointerLockElement === renderer.domElement; });
+document.addEventListener('mousemove', e => {
+  if (!mouseLocked || view !== 'street') return;
+  yaw -= (e.movementX || 0) * 0.0021;
+  pitch = THREE.MathUtils.clamp(pitch + (e.movementY || 0) * 0.0017, -0.12, 0.5);
+  idleT = 0;
+});
+addEventListener('pointerup', e => { dragging = false;
+  /* FIX 6: a clean click on the eagle ground sets the drop target */
+  if (view === 'eagle' && eagleT > 0.5 && Math.hypot(e.clientX - downX, e.clientY - downY) < 6 && performance.now() - downT < 600){
+    padNdc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    padRay.setFromCamera(padNdc, camera);
+    const pt = new THREE.Vector3();
+    if (padRay.ray.intersectPlane(_groundPlane, pt)){
+      dropTarget.set(THREE.MathUtils.clamp(pt.x, -1400, 1400), THREE.MathUtils.clamp(pt.z, -1400, 1400));
+      dropDirty = true;
+      dropMark.position.set(dropTarget.x, groundHeight(dropTarget.x, dropTarget.y) + 0.15, dropTarget.y);
+      dropMark.visible = true;
+    }
+  } });
+addEventListener('wheel', e => {
+  if (view === 'eagle') eagleRadius = THREE.MathUtils.clamp(eagleRadius + e.deltaY * 0.7, 120, 1400);
+  else dist = THREE.MathUtils.clamp(dist + e.deltaY * 0.01, 3.4, 15);
+}, { passive:true });
 
-const btnS = document.getElementById('btnStreet'), btnE = document.getElementById('btnEagle');
-function setView(v){ view = v;
+const btnS = document.getElementById('btnStreet'), btnE = document.getElementById('btnEagle'), btnDrop = document.getElementById('btnDrop');
+function setView(v){ const prev = view; view = v;
   btnS.classList.toggle('on', v === 'street'); btnE.classList.toggle('on', v === 'eagle');
+  btnDrop.style.display = v === 'eagle' ? '' : 'none';
+  if (v === 'eagle'){ _origin.set(SURV.pos.x, 0, SURV.pos.z); dropTarget.set(SURV.pos.x, SURV.pos.z); dropDirty = false; dropMark.visible = false; }
   if (v !== 'eagle') scene.fog.density = FOG_STREET;
+  if (v === 'street' && prev === 'eagle' && dropDirty) doDrop(dropTarget.x, dropTarget.y);
 }
-btnS.onclick = () => setView('street'); btnE.onclick = () => setView('eagle');
+btnS.onclick = () => setView('street'); btnE.onclick = () => setView('eagle'); btnDrop.onclick = () => setView('street');
 
 /* ---------- loop ---------- */
 const clock = new THREE.Clock();

@@ -309,6 +309,8 @@
     .z-mark.fresh { animation:markPulse .5s ease-in-out infinite alternate; font-size:34px; }
     #ascendFixed { position:absolute; left:50%; transform:translateX(-50%); bottom:112px; z-index:9; display:none; padding:13px 22px; border-radius:7px; border:2px solid var(--amber-soft); background:rgba(150,32,24,.92); color:#fff; font:700 14px/1 "IBM Plex Mono",monospace; letter-spacing:.06em; cursor:pointer; box-shadow:0 10px 30px rgba(0,0,0,.55); pointer-events:auto; }
     #ascendFixed.on { display:block; }
+    #dundasBtn { position:absolute; left:50%; transform:translateX(-50%); top:56px; z-index:9; display:none; padding:11px 18px; border-radius:7px; border:2px solid #ffd166; background:rgba(146,102,16,.94); color:#fff; font:700 13px/1 "IBM Plex Mono",monospace; letter-spacing:.05em; cursor:pointer; box-shadow:0 10px 30px rgba(0,0,0,.55); pointer-events:auto; white-space:nowrap; }
+    #dundasBtn.on { display:block; }
     #shotFlash { position:absolute; left:50%; top:50%; width:130px; height:130px; transform:translate(-50%,-50%); border-radius:50%; background:radial-gradient(circle,rgba(255,214,130,.9) 0%,rgba(255,150,50,.35) 38%,transparent 70%); opacity:0; pointer-events:none; z-index:4; transition:opacity .18s ease-out; }
     #shotFlash.on { opacity:1; transition:none; }
     @keyframes markPulse { from{ transform:translate(-50%,-100%) scale(1);} to{ transform:translate(-50%,-130%) scale(1.25);} }
@@ -553,6 +555,7 @@
     </div>
   </div>
   <button id="ascendFixed" type="button">▲ ASCEND TO EAGLE</button>
+  <button id="dundasBtn" type="button">★ YONGE &amp; DUNDAS — DROP ME THERE</button>
 
   <section class="bottom-dock" aria-label="Defense controls">
     <div class="tower-tray">
@@ -813,7 +816,7 @@ var simAcc=0, radioTimer=4, lastFeedStreet=0;
    tower damage dealt, gate damage taken per route, leak points per route. */
 var waveStats={wave:0,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1};
 var diveDbg={ptr:'—',click:'—',land:'—'}; /* Ticket-03: dive-pipeline witness for the dev chip — ptr = raw unproject + world metres of the last pointer event, click = the dive click point + resolveLanding kind/result, land = the final streetPos + yaw. Re-reviews #11/#12 both funnelled to one Union-area spot on the Mapbox build while the same pipeline is correct in the fallback sim; these three readings discriminate pointer vs resolver vs anchor in one live run. */
-var BUILD_TAG='T13'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
+var BUILD_TAG='T14'; /* Ticket-04b: visible build stamp on the health chip. Re-review #13 judged ticket-04 features "not found" while quoting pre-T04 chip text — the review environment served/read a stale build and there was no way to prove it from screenshots. Every review screenshot now carries the build it played. Bump on every ticket. */
 function resetWaveStats(){ waveStats={wave:state.wave,simSec:0,wallSec:0,shots:{barricade:0,siren:0,marksman:0},towerDmg:0,gateDmg:[0,0,0],leakPts:[0,0,0],routed:-1}; }
 function waveStatsLine(){ return 'sim '+waveStats.simSec.toFixed(0)+'s/wall '+waveStats.wallSec.toFixed(0)+'s · shots B'+waveStats.shots.barricade+'/S'+waveStats.shots.siren+'/M'+waveStats.shots.marksman+' · towerDmg '+Math.round(waveStats.towerDmg)+' · gateDmg '+waveStats.gateDmg.map(function(v){return Math.round(v)}).join('/')+' · leakPts '+waveStats.leakPts.map(function(v){return Math.round(v)}).join('/')+' · routed '+(waveStats.routed>=0?('R'+(waveStats.routed+1)+' '+routeNames3[waveStats.routed]):'—'); } /* Brief #9 D4: the routed column's route rides the wave line */
 
@@ -2933,7 +2936,8 @@ function beginDiveAt(res){
  if(survivor){ survivor.visible=true; survivor.position.copy(rig.streetPos); survivor.rotation.y=player.faceYaw; }
  rig.diveToPos.copy(otsCamPos());
  rig.diveFromEyeM=eagleEyeM(); rig.diveFromTgtM={x:rig.target.x/WORLD,y:-rig.target.z/WORLD,z:0};
- if(mapMode){ enterHybridStreet(); /* Brief #4 D1: the dive hands off to the local street renderer — start the sweep high above the landing in the LOCAL world frame, descending to the over-shoulder camera */
+ enterHybridStreet(); /* T14: hybrid street in BOTH modes — local dives previously stayed in the eagle scene, so the hero scene and the skinned presenter (both hybrid-only) could never appear on the local/Pages build. Brief #4 D1: the dive hands off to the local street renderer */
+ if(mapMode){ /* start the sweep high above the landing in the LOCAL world frame, descending to the over-shoulder camera */
   camera.position.set(rig.target.x+Math.sin(rig.yaw)*15,13.5,rig.target.z+Math.cos(rig.yaw)*15);
   camera.lookAt(rig.streetPos.x,0,rig.streetPos.z);
   rig.diveFromPos.copy(camera.position); rig.diveFromQuat.copy(camera.quaternion); rig.diveToPos.copy(otsCamPos()); }
@@ -3396,6 +3400,9 @@ function bindUI(){
  document.getElementById('diveBtn').addEventListener('click',function(){ if(rig.diveArmed)disarmDive(); else armDive(); });
  /* Brief #5 D5(2): exactly ONE ascend control remains — #ascendFixed; the duplicate street-HUD ascend button was removed. */
  document.getElementById('ascendFixed').addEventListener('click',function(){ beginAscend(true); });
+ document.getElementById('dundasBtn').addEventListener('click',function(){ /* T14: one-tap warp to the hero square — eagle panning on a phone is miserable */
+   var pt=heroWorldPos(); var go=function(){ beginDiveAt({point:pt.clone(),kind:'direct'}); };
+   if(rig.mode==='street'||rig.mode==='diving'||rig.mode==='ascending'){ beginAscend(true); setTimeout(go,150); } else { go(); } });
  document.getElementById('fireBtn').addEventListener('touchstart',function(e){ e.preventDefault(); tryFire(false); },{passive:false});
  document.getElementById('fireBtn').addEventListener('click',function(){ if(performance.now()-(player.lastFireAt||0)>450)tryFire(false); });
  /* Ticket-07: joystick + roll/reload touch controls */
@@ -3530,6 +3537,7 @@ function loop(now){
  var shEl=document.getElementById('streetHud'); if(shEl)shEl.classList.toggle('on',rig.mode==='street'||rig.mode==='diving'||rig.mode==='ascending');
  var appEl=document.getElementById('app'); if(appEl)appEl.classList.toggle('street-on',rig.mode==='street'||rig.mode==='diving'||rig.mode==='ascending'); /* Brief #5 D5(2): eagle-only panels (MAP KEY, gates list, selection) hide in street mode */
  var afEl=document.getElementById('ascendFixed'); if(afEl)afEl.classList.toggle('on',rig.mode==='street'||rig.mode==='diving');
+ var dbEl=document.getElementById('dundasBtn'); if(dbEl)dbEl.classList.toggle('on',(rig.mode==='eagle'||rig.mode==='street')&&!(HERO.active&&rig.mode==='street'));
  updateZombieMesh(now/1000);
  updateTracers(dt); updateParticles(dt); updateSmoke(dt); updateCommotion(now,dt); updateDmg(dt); updateEagleFx();
  routeMeshes.forEach(function(m,i){ m.material.opacity=.56+Math.sin(now*.002+i)*.12; });

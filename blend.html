@@ -181,25 +181,15 @@ fetch('city-buildings.json').then(r => r.json()).then(list => {
   console.log('city buildings built:', built, 'merged meshes:', window.__cityChunks);
 }).catch(e => console.warn('city buildings', e));
 
-/* ---------- roads: the real street web as dark ribbons ---------- */
-fetch('city-roads.json').then(r => r.json()).then(roads => {
-  const verts = [];
-  roads.forEach(rd => {
-    const hw = rd.w / 2;
-    for (let i = 0; i < rd.pts.length - 1; i++){
-      const [x1, z1] = rd.pts[i], [x2, z2] = rd.pts[i+1];
-      let dx = x2 - x1, dz = z2 - z1; const len = Math.hypot(dx, dz) || 1; dx /= len; dz /= len;
-      const nx = -dz * hw, nz = dx * hw;
-      const ax = x1 + nx, az = z1 + nz, bx = x1 - nx, bz = z1 - nz, cx2 = x2 + nx, cz2 = z2 + nz, dx2 = x2 - nx, dz2 = z2 - nz;
-      verts.push(ax, 0, az, bx, 0, bz, cx2, 0, cz2, bx, 0, bz, dx2, 0, dz2, cx2, 0, cz2);
-    }
-  });
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
-  g.computeVertexNormals();
-  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color:0x43484e, roughness:.95 }));
-  m.position.y = 0.14; scene.add(m);
-}).catch(e => console.warn('roads', e));
+/* ---------- ground skin: OUR ground over Google's — the real street plan,
+   baked in. Google keeps the buildings; the plan (and its consistency) is ours. */
+new THREE.TextureLoader().load('ground-skin.jpg', t => {
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000),
+    new THREE.MeshStandardMaterial({ map: t, roughness: 1 }));
+  m.rotation.x = -Math.PI / 2; m.position.y = 0.25; scene.add(m);
+  window.__skin = true;
+});
 
 
 /* ---------- ground: paper lots + graphite streets ---------- */
@@ -233,12 +223,12 @@ base.rotation.x = -Math.PI/2; base.position.y = -0.4; base.position.z = 420; bas
   const sh = new THREE.Shape(); shore.forEach(([x,z], i) => { if (i===0) sh.moveTo(x,z); else sh.lineTo(x,z); });
   const g = new THREE.ShapeGeometry(sh); g.rotateX(Math.PI/2);
   const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color:0x2e4d4f, roughness:.38, metalness:.05, side:THREE.DoubleSide }));
-  m.position.y = -0.02; scene.add(m);
+  m.position.y = 0.32; scene.add(m);
   const isl = [[-1900,2180],[1900,2280],[1950,2560],[-1850,2480]];
   const sh2 = new THREE.Shape(); isl.forEach(([x,z], i) => { if (i===0) sh2.moveTo(x,z); else sh2.lineTo(x,z); });
   const g2 = new THREE.ShapeGeometry(sh2); g2.rotateX(Math.PI/2);
   const m2 = new THREE.Mesh(g2, new THREE.MeshStandardMaterial({ color:0x55603f, roughness:1, side:THREE.DoubleSide }));
-  m2.position.y = -0.008; scene.add(m2);
+  m2.position.y = 0.34; scene.add(m2);
 })();
 function streetTexture(){
   const [c, g] = cnv(512, 512);

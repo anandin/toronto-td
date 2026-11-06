@@ -65,7 +65,7 @@ app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(PAPER);
-const FOG_STREET = 0.0042, FOG_EAGLE = 0.00016;
+const FOG_STREET = 0.0042, FOG_EAGLE = 0.00019;
 scene.fog = new THREE.FogExp2(PAPER, FOG_STREET);
 
 const camera = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.1, 6000);
@@ -285,8 +285,11 @@ function street(w, l, rx, ry){
 street(26, 460, 1, 18); street(460, 26, 18, 1);
 (function crosswalks(){
   const [c, g] = cnv(256, 256); g.clearRect(0,0,256,256);
-  g.fillStyle = 'rgba(230,220,200,0.2)';
-  for (let i = 0; i < 6; i++) g.fillRect(14 + i*40, 10, 22, 236);
+  for (let i = 0; i < 9; i++){
+    g.fillStyle = `rgba(228,218,198,${0.09 + Math.random()*0.07})`;
+    g.fillRect(10 + i*27, 10, 13, 236);
+    g.clearRect(10 + i*27 + Math.random()*6, 30 + Math.random()*160, 13, 8 + Math.random()*30);   // wear gaps
+  }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.MeshStandardMaterial({ map:t, transparent:true, roughness:1 });
   [[0,-15.5,0],[0,15.5,0],[-15.5,0,Math.PI/2],[15.5,0,Math.PI/2]].forEach(([x,z,r]) => {
@@ -434,8 +437,13 @@ fetch('hero-tiles/dressing.json').then(r => r.json()).then(d => {
     cache[src].then(gltf => { if (!gltf) return;
       const o = gltf.scene.clone(true);
       o.position.set(p.pos[0], 0, p.pos[1]); o.rotation.y = p.rotY;
-      o.traverse(n => { if (n.isMesh){ n.castShadow = true; n.receiveShadow = true; } });
-      scene.add(o);
+      const TINTS = { 'streetcar': 0xa8342a, 'sedan-car': 0x77828a, 'wrecked-car': 0x8a6a4a,
+                      'barrier': 0x9a8a6a, 'streetlight': 0x707880, 'traffic-light-gantry': 0x707880,
+                      'bus-shelter': 0x7a7f85, 'dumpster': 0x5d6b5e };
+      const tint = TINTS[p.src];
+      o.traverse(n => { if (n.isMesh){ n.castShadow = true; n.receiveShadow = true;
+        if (tint && n.material && n.material.color){ n.material = n.material.clone(); n.material.color.multiply(new THREE.Color(tint)); } } });
+      authored.add(o);
     });
   });
 }).catch(e => console.warn('dressing', e));

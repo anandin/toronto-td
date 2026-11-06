@@ -42,6 +42,25 @@
   #vig{position:fixed;inset:0;z-index:7;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center, transparent 42%, rgba(166,20,10,.55) 100%);}
   #controls{position:fixed;left:50%;transform:translateX(-50%);bottom:74px;z-index:5;pointer-events:none;animation:ctrlfade 1s ease 6s forwards;}
   @keyframes ctrlfade{to{opacity:0;visibility:hidden;}}
+  #hudGate{position:fixed;left:50%;transform:translateX(-50%);top:14px;z-index:5;width:250px;pointer-events:none;}
+  #hudGate b{color:#111;font-size:15px;}
+  #phaseChip{float:right;font-weight:700;color:#7a2a20;letter-spacing:.14em;}
+  #gatebar{height:10px;background:rgba(20,16,12,.28);border-radius:4px;margin-top:5px;overflow:hidden;}
+  #gatefill{height:100%;width:100%;background:#51707a;border-radius:4px;transition:width .25s;}
+  #buildbar{position:fixed;left:50%;transform:translateX(-50%);bottom:70px;z-index:6;display:flex;gap:8px;align-items:stretch;}
+  #buildbar button{pointer-events:auto;padding:8px 12px;border-radius:7px;border:1px solid rgba(44,42,38,.55);
+    background:rgba(240,235,218,.92);color:#2c2a26;font:400 10px/1.45 "IBM Plex Mono",monospace;letter-spacing:.06em;cursor:pointer;text-align:left;}
+  #buildbar button b{display:block;font-size:12px;letter-spacing:.1em;color:#111;}
+  #buildbar button .cost{color:#7a2a20;font-weight:700;}
+  #buildbar button.placing{background:#2c2a26;color:#f0ead6;}
+  #buildbar button.placing b{color:#f0ead6;}
+  #buildbar button.poor{opacity:.42;}
+  #buildbar button:disabled{cursor:default;}
+  #btnStart{background:#2c2a26 !important;color:#f0ead6 !important;font-weight:700 !important;font-size:11px !important;text-align:center !important;min-width:118px;}
+  #btnStart b{color:#f0ead6 !important;}
+  #btnStart:disabled{background:rgba(240,235,218,.92) !important;color:#2c2a26 !important;}
+  #selInfo{align-self:center;color:#2c2a26;background:rgba(240,235,218,.85);border:1px solid rgba(44,42,38,.4);
+    padding:8px 10px;border-radius:6px;font-size:10px;letter-spacing:.08em;display:none;}
 </style>
 <script type="importmap">
 { "imports": {
@@ -66,6 +85,21 @@
 <div id="banner"><div id="bannerMain"></div><div id="bannerSub"></div></div>
 <div id="controls" class="card">WASD MOVE · CLICK FIRE · R RELOAD · DRAG LOOK · EAGLE = COMMAND VIEW</div>
 <div id="vig"></div>
+<div id="hudGate" class="card">
+  <span>SALVAGE <b id="salvNum">130</b></span><span id="phaseChip">BUILD</span>
+  <div style="margin-top:3px">YONGE GATE · <span id="gateText">255</span> / 255 HP</div>
+  <div id="gatebar"><div id="gatefill"></div></div>
+</div>
+<div id="buildbar">
+  <button class="tcard" id="tc-barricade" type="button"><b>BARRICADE</b><span class="cost">30 salvage</span> · blocker · key 1</button>
+  <button class="tcard" id="tc-marksman" type="button"><b>MARKSMAN</b><span class="cost">60 salvage</span> · ranged 38 m · key 2</button>
+  <button class="tcard" id="tc-siren" type="button"><b>SIREN</b><span class="cost">40 salvage</span> · slow aura 14 m · key 3</button>
+  <button id="btnRepair" type="button"><b>REPAIR GATE</b>1 salvage = 2 HP</button>
+  <span id="selInfo"></span>
+  <button id="btnSell" type="button" style="display:none"><b>SELL</b><span id="sellAmt"></span></button>
+  <button id="btnContinue" type="button" style="display:none"><b>CONTINUE ▸</b>endless mode</button>
+  <button id="btnStart" type="button"><b>START WAVE 1 ▸</b>SPACE</button>
+</div>
 
 <script type="module">
 import * as THREE from 'three';
@@ -612,7 +646,12 @@ const SPAWNS = [[0,-72],[8,-66],[-8,-66],[0,72],[6,68],[-6,68],[72,0],[66,8],[-7
 const keys = {};
 addEventListener('keydown', e => { keys[e.code] = true;
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
-  if (e.code === 'KeyR') startReload(); });
+  if (e.code === 'KeyR') startReload();
+  if (e.code === 'Digit1') togglePlacing('barricade');
+  if (e.code === 'Digit2') togglePlacing('marksman');
+  if (e.code === 'Digit3') togglePlacing('siren');
+  if (e.code === 'Escape'){ TD.placing = null; TD.selected = null; syncTowers(); }
+  if (e.code === 'Space'){ if (G.phase === 'build') startNextWave(); else if (G.phase === 'victory') continueEndless(); } });
 addEventListener('keyup', e => { keys[e.code] = false; });
 
 /* HUD */
@@ -623,50 +662,107 @@ const waveEl = el('hudWave'), killsEl = el('hudKills'), hpFill = el('hpfill'), h
 let bannerT = 0, vig = 0, lastHud = '';
 function showBanner(main, sub){ bannerMain.textContent = main; bannerSub.textContent = sub || ''; bannerEl.style.opacity = '1'; bannerT = 2.2; }
 function aliveCount(){ let n = 0; for (const z of zombies) if (z.state === 'alive') n++; return n; }
+const salvEl = el('salvNum'), gateTextEl = el('gateText'), gateFillEl = el('gatefill'), phaseEl = el('phaseChip'),
+      btnStartEl = el('btnStart'), btnSellEl = el('btnSell'), btnContinueEl = el('btnContinue'), selInfoEl = el('selInfo');
+let lastHud2 = '';
 function updateHUD(){
   const s = G.wave + '|' + Math.ceil(G.hp) + '|' + G.mag + '|' + G.kills + '|' + aliveCount() + '|' + G.reloading;
-  if (s === lastHud) return; lastHud = s;
-  waveEl.textContent = 'WAVE ' + Math.max(1, G.wave);
-  killsEl.textContent = 'KILLS ' + G.kills + ' · ALIVE ' + aliveCount();
-  hpFill.style.width = Math.max(0, G.hp) + '%'; hpText.textContent = Math.ceil(G.hp);
-  ammoEl.textContent = G.reloading ? '––' : G.mag;
-  ammoEl.classList.toggle('low', !G.reloading && G.mag <= 3);
+  if (s !== lastHud){ lastHud = s;
+    waveEl.textContent = 'WAVE ' + Math.max(1, G.wave);
+    killsEl.textContent = 'KILLS ' + G.kills + ' · ALIVE ' + aliveCount();
+    hpFill.style.width = Math.max(0, G.hp) + '%'; hpText.textContent = Math.ceil(G.hp);
+    ammoEl.textContent = G.reloading ? '––' : G.mag;
+    ammoEl.classList.toggle('low', !G.reloading && G.mag <= 3);
+  }
+  const s2 = TD.salvage + '|' + Math.ceil(TD.gateHP) + '|' + G.phase + '|' + Math.ceil(TD.buildT) + '|' + TD.placing
+           + '|' + (TD.selected ? TD.selected.pad : -1) + '|' + towers.length + '|' + G.wave;
+  if (s2 === lastHud2) return; lastHud2 = s2;
+  salvEl.textContent = TD.salvage;
+  gateTextEl.textContent = Math.max(0, Math.ceil(TD.gateHP));
+  gateFillEl.style.width = Math.max(0, TD.gateHP / TD.gateMax * 100) + '%';
+  gateFillEl.style.background = TD.gateHP > TD.gateMax * 0.5 ? '#51707a' : (TD.gateHP > TD.gateMax * 0.25 ? '#b07a2f' : '#a62b1f');
+  phaseEl.textContent = G.phase === 'build' ? 'BUILD ' + Math.max(0, Math.ceil(TD.buildT)) + 's'
+    : G.phase === 'defend' ? 'DEFEND' : G.phase.toUpperCase();
+  for (const t of ['barricade','marksman','siren']){
+    const b = el('tc-' + t);
+    b.classList.toggle('placing', TD.placing === t);
+    b.classList.toggle('poor', TD.salvage < TDEFS[t].cost);
+  }
+  el('btnRepair').classList.toggle('poor', TD.salvage < 1 || TD.gateHP >= TD.gateMax);
+  if (TD.selected){
+    const t = TD.selected;
+    selInfoEl.style.display = 'block';
+    selInfoEl.textContent = TDEFS[t.type].name + ' · PAD ' + (t.pad + 1) + (t.type === 'barricade' ? ' · HULL ' + Math.ceil(t.hp) : '');
+    btnSellEl.style.display = 'block';
+    el('sellAmt').textContent = '+' + Math.floor(TDEFS[t.type].cost * 0.5) + ' salvage';
+  } else { selInfoEl.style.display = 'none'; btnSellEl.style.display = 'none'; }
+  btnContinueEl.style.display = G.phase === 'victory' ? 'block' : 'none';
+  if (G.phase === 'build'){ btnStartEl.style.display = 'block'; btnStartEl.disabled = false;
+    btnStartEl.innerHTML = '<b>START WAVE ' + (G.wave + 1) + ' ▸</b>SPACE'; }
+  else if (G.phase === 'defend'){ btnStartEl.style.display = 'block'; btnStartEl.disabled = true;
+    btnStartEl.innerHTML = '<b>WAVE ' + G.wave + '</b>DEFEND THE GATE'; }
+  else if (G.phase === 'defeat'){ btnStartEl.style.display = 'block'; btnStartEl.disabled = false;
+    btnStartEl.innerHTML = '<b>↻ RESTART RUN</b>fresh salvage + gate'; }
+  else btnStartEl.style.display = 'none';
 }
 
 /* waves */
+/* Campaign table from game.html (waves[] — north/west/east columns + mixes,
+   10 hand-tuned waves). Columns map to lanes: N = Yonge north end,
+   W = Dundas west end, E = Dundas east end. No southern column: the gate
+   itself blocks Yonge south — in the original the three route gates were
+   likewise all north of the stronghold. */
+const WAVES = [
+  { n:7,  w:0,  e:0,  mix:['walker'] },
+  { n:3,  w:4,  e:0,  mix:['walker'] },
+  { n:3,  w:3,  e:6,  mix:['walker','runner'] },
+  { n:12, w:0,  e:8,  mix:['runner','walker'] },
+  { n:8,  w:8,  e:8,  mix:['walker','runner'] },
+  { n:6,  w:13, e:6,  mix:['walker','walker','tank'] },
+  { n:8,  w:10, e:14, mix:['runner','walker','runner'] },
+  { n:12, w:12, e:12, mix:['tank','walker','runner','walker'] },
+  { n:15, w:15, e:16, mix:['walker','runner','tank','runner'] },
+  { n:18, w:18, e:18, mix:['tank','runner','walker','runner','walker'] },
+];
 function buildQueue(n){
-  const total = 4 + 2 * n;
-  const tanks = n >= 3 ? Math.min(1 + ((n - 3) >> 1), 3) : 0;
-  const runners = n >= 2 ? Math.min(Math.round(total * 0.3), total - tanks) : 0;
+  let cols, mix;
+  if (n <= 10){ const w = WAVES[n - 1]; cols = [['N', w.n], ['W', w.w], ['E', w.e]]; mix = w.mix; }
+  else { const total = 54 + 6 * (n - 10), third = Math.round(total / 3);
+         cols = [['N', third], ['W', third], ['E', total - 2 * third]]; mix = WAVES[9].mix; }
   const q = [];
-  for (let i = 0; i < total - tanks - runners; i++) q.push('walker');
-  for (let i = 0; i < runners; i++) q.push('runner');
-  for (let i = 0; i < tanks; i++) q.push('tank');
+  for (const [lane, count] of cols) for (let i = 0; i < count; i++) q.push({ t: mix[i % mix.length], lane });
   for (let i = q.length - 1; i > 0; i--){ const j = (Math.random() * (i + 1)) | 0; const tmp = q[i]; q[i] = q[j]; q[j] = tmp; }
   return q;
 }
 function startWave(n){
   for (let i = zombies.length - 1; i >= 0; i--) removeZombie(i);
-  G.wave = n; G.queue = buildQueue(n); G.phase = 'spawning'; G.spawnT = 0;
-  showBanner('WAVE ' + n, n === 1 ? 'hold the corner' : '');
+  G.wave = n; G.queue = buildQueue(n); G.phase = 'defend'; G.spawnT = 0;
+  TD.placing = null;
+  showBanner('WAVE ' + n, n === 1 ? 'they are coming for the gate' : (n <= 10 ? WAVES[n - 1] && '' : 'endless'));
 }
-function spawnZombie(type){
+const ZDPS = { walker:4, runner:3, tank:11 };   /* gate-chew dps — game.html zombieDefs.gateDps */
+const ZSALVAGE = { walker:2, runner:3, tank:25 };
+function spawnZombie(entry){
   if (!zTemplate) return false;
-  const spec = ZT[type];
+  const type = entry.t, spec = ZT[type];
   const root = skeletonClone(zTemplate.scene);
   const mats = [];
   root.traverse(n => { if (n.isMesh){ n.material = n.material.clone();
     if ('emissive' in n.material){ n.material.emissive = new THREE.Color(0xff2a1a); n.material.emissiveIntensity = 0; }
     mats.push(n.material); n.castShadow = false; n.frustumCulled = false; } });
   root.scale.setScalar(spec.h / zGeoH);
-  const sp = SPAWNS[(Math.random() * SPAWNS.length) | 0];
-  root.position.set(sp[0] + Math.random() * 6 - 3, 0, sp[1] + Math.random() * 6 - 3);
+  const off = Math.random() * 11 - 5.5, off2 = Math.random() * 8 - 4;
+  let wp;
+  if (entry.lane === 'N'){ root.position.set(off, 0, -72); wp = [[off, -40], [off, GATE_Z - 2.1]]; }
+  else if (entry.lane === 'W'){ root.position.set(-72, 0, off2); wp = [[-38, off2], [off, off2], [off, GATE_Z - 2.1]]; }
+  else { root.position.set(72, 0, off2); wp = [[38, off2], [off, off2], [off, GATE_Z - 2.1]]; }
   scene.add(root);
   const mx = new THREE.AnimationMixer(root);
   const walkC = THREE.AnimationClip.findByName(zTemplate.animations, 'walk');
   if (walkC){ const a = mx.clipAction(walkC); a.time = Math.random() * 1.5; a.play(); }
   zombies.push({ root, mixer:mx, mats, type, hp:spec.hp, speed:spec.speed, h:spec.h,
-                 flashT:0, atkCd:0.5 + Math.random() * 0.5, state:'alive', dieT:0 });
+                 flashT:0, atkCd:0.5 + Math.random() * 0.5, state:'alive', dieT:0,
+                 wp, wpI:0, chewing:false, gateDps:ZDPS[type], slowT:0 });
   return true;
 }
 function removeZombie(i){
@@ -686,14 +782,15 @@ function startReload(){ if (G.reloading || G.mag >= 12) return; G.reloading = tr
 function damageZombie(z, dmg, dir){
   z.hp -= dmg; z.flashT = 0.09;
   z.root.position.x += dir.x * 0.35; z.root.position.z += dir.z * 0.35;
-  if (z.hp <= 0 && z.state === 'alive'){ z.state = 'dying'; z.dieT = 0; G.kills++; }
+  if (z.hp <= 0 && z.state === 'alive'){ z.state = 'dying'; z.dieT = 0; G.kills++; TD.salvage += ZSALVAGE[z.type]; }
 }
 function damageSurvivor(dmg){
   G.hp -= dmg; G.lastHurt = G.time; vig = Math.max(vig, 0.35);
   if (G.hp <= 0){
     G.deaths++; vig = 1;
+    const pen = Math.floor(TD.salvage * 0.10); TD.salvage -= pen;   /* the original rule: death costs 10% of salvage */
     SURV.pos.set(4.2, 0, 7.2); G.hp = 100; G.lastHurt = G.time;
-    showBanner('DOWN', 'back at the corner');
+    showBanner('DOWN', 'back at the corner · −' + pen + ' salvage');
   }
 }
 function fire(){
@@ -715,7 +812,7 @@ function fire(){
   if (hit) damageZombie(hit, 13, ray.direction);
   if (G.mag === 0) startReload();
 }
-renderer.domElement.addEventListener('pointerdown', e => { if (e.button === 0) fire(); });
+renderer.domElement.addEventListener('pointerdown', e => { if (e.button === 0 && !handlePadTap(e)) fire(); });
 
 /* per-frame game step (called from tick) */
 function stepGame(dt){
@@ -752,19 +849,21 @@ function stepGame(dt){
   /* survivor regen: +7/s after 5 s untouched */
   if (G.hp > 0 && G.hp < 100 && G.time - G.lastHurt > 5) G.hp = Math.min(100, G.hp + 7 * dt);
 
-  /* wave state machine */
+  /* wave state machine: build -> defend -> (victory | build) ; defeat ends the run */
   if (G.phase === 'boot'){
-    if (SURV.root && zTemplate) startWave(1);
-  } else if (G.phase === 'spawning' || G.phase === 'active'){
+    if (SURV.root && zTemplate){ G.phase = 'build'; TD.buildT = BUILD_TIME; showBanner('HOLD THE GATE', 'build your defence — wave 1 inbound'); }
+  } else if (G.phase === 'build'){
+    TD.buildT -= dt;
+    if (TD.buildT <= 0) startNextWave();
+  } else if (G.phase === 'defend'){
     G.spawnT -= dt;
     if (G.queue.length && aliveCount() < 24 && G.spawnT <= 0){
       if (spawnZombie(G.queue[0])){ G.queue.shift(); G.spawnT = 0.7; }
     }
-    if (!G.queue.length && aliveCount() === 0){ G.phase = 'breather'; G.breatherT = 3; showBanner('WAVE ' + G.wave + ' CLEARED', 'breather — reload'); }
-  } else if (G.phase === 'breather'){
-    G.breatherT -= dt;
-    if (G.breatherT <= 0) startWave(G.wave + 1);
+    if (!G.queue.length && aliveCount() === 0) waveCleared();
   }
+
+  stepTowers(dt);
 
   /* zombies */
   for (let i = zombies.length - 1; i >= 0; i--){
@@ -782,16 +881,41 @@ function stepGame(dt){
       if (z.dieT >= 1) removeZombie(i);
       continue;
     }
-    _zv.subVectors(SURV.pos, z.root.position); _zv.y = 0;
-    const dist = _zv.length();
-    if (dist > 0.001) _zv.divideScalar(dist);
-    if (dist > 1.6){
-      z.root.position.x += _zv.x * z.speed * dt;
-      z.root.position.z += _zv.z * z.speed * dt;
-      z.root.rotation.y = Math.atan2(_zv.x, _zv.z);
+    const zx = z.root.position.x, zz = z.root.position.z;
+    const dSurv = Math.hypot(SURV.pos.x - zx, SURV.pos.z - zz);
+    /* a barricade in the face is a wall: stop and chew it (only barricades block) */
+    let blocker = null;
+    for (const tw of towers){
+      if (tw.type !== 'barricade' || tw.hp <= 0) continue;
+      if (Math.hypot(tw.x - zx, tw.z - zz) < 1.9){ blocker = tw; break; }
+    }
+    const spd = z.speed * (z.slowT > 0 ? SIREN_SLOW : 1);
+    if (blocker){
+      z.root.rotation.y = Math.atan2(blocker.x - zx, blocker.z - zz);
+      blocker.hp -= z.gateDps * dt;
+      if (blocker.hp <= 0) destroyTower(blocker);
+    } else if (z.chewing){
+      /* at the gate: chew it — only a survivor on top of them breaks the chew */
+      if (dSurv < 3.5 && !TD.defeat){
+        stepToward(z, SURV.pos.x, SURV.pos.z, spd, dt);
+        z.atkCd -= dt;
+        if (dSurv <= 1.7 && z.atkCd <= 0){ z.atkCd = 0.9; damageSurvivor(12); }
+      } else if (!TD.defeat){
+        z.root.rotation.y = Math.PI;
+        TD.gateHP -= z.gateDps * dt;
+        if (TD.gateHP <= 0){ TD.gateHP = 0; onDefeat(); }
+      }
+    } else if (dSurv < 10){
+      /* target of opportunity: the stage-2 seek, kept inside 10 m */
+      if (dSurv > 1.6) stepToward(z, SURV.pos.x, SURV.pos.z, spd, dt);
+      else { z.atkCd -= dt; if (z.atkCd <= 0){ z.atkCd = 0.9; damageSurvivor(12); } }
     } else {
-      z.atkCd -= dt;
-      if (z.atkCd <= 0){ z.atkCd = 0.9; damageSurvivor(12); }
+      /* route: lane waypoints down the avenues to the gate */
+      const wp = z.wp[z.wpI];
+      if (wp){
+        const arrived = stepToward(z, wp[0], wp[1], spd, dt);
+        if (arrived){ z.wpI++; if (z.wpI >= z.wp.length) z.chewing = true; }
+      } else z.chewing = true;
     }
   }
   /* cheap separation so the horde doesn't stack into one body */
@@ -809,11 +933,281 @@ function stepGame(dt){
   updateHUD();
 }
 
+
+/* ================= THE TOWER DEFENCE (phase A) =================
+   One objective: the Yonge Gate at z = +18, HP 255 (game.html's Yonge gate).
+   The horde routes down the avenues to it; the survivor is a target of
+   opportunity inside 10 m. Palette law (brown-watch): steel, concrete,
+   brass accents — the sun stays the only warm source; no new warm lights. */
+const GATE_Z = 18, BUILD_TIME = 30, SIREN_SLOW = 0.55;
+const TDEFS = {
+  barricade: { name:'BARRICADE', cost:30, hp:90 },                          /* hull — game.html towerDefs */
+  marksman:  { name:'MARKSMAN',  cost:60, range:38, dmg:52, rate:1.08 },   /* dmg/rate — game.html marksman */
+  siren:     { name:'SIREN',     cost:40, range:14 },                      /* aura — zombies at 55% speed */
+};
+const TD = { salvage:130, gateHP:255, gateMax:255, buildT:BUILD_TIME,
+             placing:null, selected:null, victory:false, defeat:false, endless:false };
+const towers = [];
+const gameG = new THREE.Group(); scene.add(gameG);   /* scene-level: visible in street AND eagle */
+
+/* ---- the gate: steel containers + jersey line across Yonge ---- */
+(function buildGate(){
+  const steel = new THREE.MeshStandardMaterial({ color:0x46525c, roughness:.55, metalness:.35, emissive:0x46525c, emissiveIntensity:0.12 });
+  const steelDk = new THREE.MeshStandardMaterial({ color:0x39434c, roughness:.6, metalness:.35, emissive:0x39434c, emissiveIntensity:0.12 });
+  const conc = new THREE.MeshStandardMaterial({ color:0x838b8e, roughness:.95, emissive:0x838b8e, emissiveIntensity:0.12 });
+  const brass = new THREE.MeshStandardMaterial({ color:0x8a6f3c, roughness:.35, metalness:.65 });
+  const mk = (geo, mat, x, y, z, ry) => { const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z); if (ry) m.rotation.y = ry; gameG.add(m); return m; };
+  const cGeo = new THREE.BoxGeometry(6.4, 2.6, 2.4);
+  mk(cGeo, steel, -6.6, 1.3, GATE_Z).castShadow = true;
+  mk(cGeo, steel,  6.6, 1.3, GATE_Z).castShadow = true;
+  mk(new THREE.BoxGeometry(7.2, 2.6, 2.4), steelDk, 0, 3.9, GATE_Z).castShadow = true;
+  const postGeo = new THREE.BoxGeometry(0.8, 5.2, 0.8);
+  mk(postGeo, brass, -10.2, 2.6, GATE_Z); mk(postGeo, brass, 10.2, 2.6, GATE_Z);
+  const jGeo = new THREE.BoxGeometry(2.4, 0.85, 0.55);
+  [-5.5, -1.8, 1.8, 5.5].forEach((x, i) => mk(jGeo, conc, x, 0.44, GATE_Z - 2.4, (i % 2 ? -1 : 1) * 0.04));
+})();
+
+/* ---- build pads: brass-ringed steel discs ringing the corner ---- */
+const PAD_POS = [[-6,-26],[6,-26],[-6,-11.5],[6,-11.5],[-16,-6],[16,-6],
+                 [-16,6],[16,6],[-6,10],[6,10],[-11,14],[11,14]];
+const PADS = [], padHitMeshes = [];
+(function buildPads(){
+  const discGeo = new THREE.CylinderGeometry(1.55, 1.68, 0.16, 28);
+  const discMat = new THREE.MeshStandardMaterial({ color:0x3f464d, roughness:.5, metalness:.5 });
+  const ringGeo = new THREE.TorusGeometry(1.62, 0.055, 8, 40);
+  const hitGeo = new THREE.CircleGeometry(2.7, 20);
+  const hitMat = new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false });
+  PAD_POS.forEach(([x, z], i) => {
+    const g = new THREE.Group(); g.position.set(x, 0, z);
+    const disc = new THREE.Mesh(discGeo, discMat); disc.position.y = 0.08; g.add(disc);
+    const ringMat = new THREE.MeshStandardMaterial({ color:0x8a6f3c, emissive:0x8a6f3c, emissiveIntensity:0.15, roughness:.35, metalness:.7 });
+    const ring = new THREE.Mesh(ringGeo, ringMat); ring.rotation.x = Math.PI / 2; ring.position.y = 0.1; g.add(ring);
+    const hit = new THREE.Mesh(hitGeo, hitMat); hit.rotation.x = -Math.PI / 2; hit.position.y = 0.12;
+    hit.userData.pad = i; g.add(hit); padHitMeshes.push(hit);
+    gameG.add(g);
+    PADS.push({ x, z, tower:null, ringMat });
+  });
+})();
+
+/* ---- eagle readability: lane ribbons + spawn markers (cool steel, never warm) ---- */
+const markerMat = new THREE.MeshBasicMaterial({ color:0x9fd4d8, transparent:true, opacity:0.4, depthWrite:false, side:THREE.DoubleSide });
+(function buildLanes(){
+  const laneMat = new THREE.MeshBasicMaterial({ color:0x51707a, transparent:true, opacity:0.15, depthWrite:false });
+  const mk = (w, l, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, l), laneMat);
+    m.rotation.x = -Math.PI / 2; m.position.set(x, 0.07, z); gameG.add(m); };
+  mk(7.5, 92, 0, -28); mk(74, 7.5, -39, 0); mk(74, 7.5, 39, 0);
+  const ringGeo = new THREE.RingGeometry(2.1, 3.0, 32);
+  [[0,-72],[-72,0],[72,0]].forEach(([x, z]) => { const m = new THREE.Mesh(ringGeo, markerMat);
+    m.rotation.x = -Math.PI / 2; m.position.set(x, 0.09, z); gameG.add(m); });
+})();
+
+/* ---- pooled marksman tracers: thin, pale, gone in 70 ms ---- */
+const tracerPool = [];
+(function buildTracers(){
+  for (let i = 0; i < 10; i++){
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+    const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color:0xe8f2f2, transparent:true, opacity:0 }));
+    line.frustumCulled = false; line.visible = false; scene.add(line);
+    tracerPool.push({ line, t:0 });
+  }
+})();
+const _td = new THREE.Vector3();
+function fireTracer(x1, y1, z1, x2, y2, z2){
+  let tr = tracerPool[0];
+  for (const c of tracerPool) if (c.t <= 0){ tr = c; break; }
+  const a = tr.line.geometry.attributes.position.array;
+  a[0] = x1; a[1] = y1; a[2] = z1; a[3] = x2; a[4] = y2; a[5] = z2;
+  tr.line.geometry.attributes.position.needsUpdate = true;
+  tr.t = 0.07; tr.line.visible = true; tr.line.material.opacity = 0.8;
+}
+
+/* ---- tower meshes: steel + concrete, brass accents, NO shadow-casters ---- */
+const steelMat = new THREE.MeshStandardMaterial({ color:0x4a525a, roughness:.5, metalness:.45, emissive:0x4a525a, emissiveIntensity:0.12 });
+const steelDkMat = new THREE.MeshStandardMaterial({ color:0x2c3138, roughness:.55, metalness:.4, emissive:0x2c3138, emissiveIntensity:0.12 });
+const concMat = new THREE.MeshStandardMaterial({ color:0x838b8e, roughness:.95, emissive:0x838b8e, emissiveIntensity:0.12 });
+const concDkMat = new THREE.MeshStandardMaterial({ color:0x6d7478, roughness:.95, emissive:0x6d7478, emissiveIntensity:0.12 });
+function buildTowerMesh(tw){
+  const g = tw.group;
+  const add = (geo, mat, x, y, z, ry) => { const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z); if (ry) m.rotation.y = ry; g.add(m); return m; };
+  if (tw.type === 'barricade'){
+    add(new THREE.BoxGeometry(3.0, 0.95, 0.85), concMat, 0, 0.48, 0);
+    add(new THREE.BoxGeometry(3.0, 0.7, 0.85), concDkMat, 0, 1.3, 0);
+    add(new THREE.BoxGeometry(0.18, 1.65, 0.95), steelMat, -1.45, 0.83, 0);
+    add(new THREE.BoxGeometry(0.18, 1.65, 0.95), steelMat, 1.45, 0.83, 0);
+  } else if (tw.type === 'marksman'){
+    add(new THREE.CylinderGeometry(0.09, 0.14, 3.1, 8), steelDkMat, 0, 1.55, 0);
+    add(new THREE.BoxGeometry(1.15, 0.12, 1.15), steelMat, 0, 3.12, 0);
+    add(new THREE.BoxGeometry(0.72, 0.5, 0.72), steelMat, 0, 3.42, 0);
+    add(new THREE.BoxGeometry(0.09, 0.09, 1.15), steelDkMat, 0, 3.45, 0.6);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(37.5, 38, 64),
+      new THREE.MeshBasicMaterial({ color:0x9fb6ba, transparent:true, opacity:0.16, depthWrite:false, side:THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06; ring.visible = false; g.add(ring); tw.ring = ring;
+  } else if (tw.type === 'siren'){
+    add(new THREE.CylinderGeometry(0.07, 0.11, 1.7, 8), steelDkMat, 0, 0.85, 0);
+    add(new THREE.CylinderGeometry(0.44, 0.15, 0.62, 12), steelMat, 0, 1.95, 0);
+    add(new THREE.SphereGeometry(0.09, 8, 8),
+      new THREE.MeshStandardMaterial({ color:0x9fd4d8, emissive:0x9fd4d8, emissiveIntensity:0.7 }), 0, 2.36, 0);
+    const aura = new THREE.Mesh(new THREE.RingGeometry(13.55, 14, 48),
+      new THREE.MeshBasicMaterial({ color:0x9fd4d8, transparent:true, opacity:0.09, depthWrite:false, side:THREE.DoubleSide }));
+    aura.rotation.x = -Math.PI / 2; aura.position.y = 0.05; g.add(aura); tw.aura = aura;
+  }
+}
+function buildTower(type, padIdx, charge){
+  const def = TDEFS[type], pad = PADS[padIdx];
+  if (!def || !pad || pad.tower) return false;
+  if (charge){ if (TD.salvage < def.cost) return false; TD.salvage -= def.cost; }
+  const tw = { type, pad: padIdx, x: pad.x, z: pad.z, group: new THREE.Group(),
+               hp: def.hp || 9999, maxHp: def.hp || 9999, cd: 0, scaleT: 0, ring: null, aura: null };
+  buildTowerMesh(tw);
+  tw.group.position.set(pad.x, 0, pad.z);
+  tw.group.scale.setScalar(0.01);
+  gameG.add(tw.group);
+  pad.tower = tw; towers.push(tw);
+  return true;
+}
+function destroyTower(tw){
+  const i = towers.indexOf(tw); if (i < 0) return;
+  towers.splice(i, 1);
+  gameG.remove(tw.group);
+  if (PADS[tw.pad].tower === tw) PADS[tw.pad].tower = null;
+  if (TD.selected === tw) TD.selected = null;
+}
+function sellTower(tw){ TD.salvage += Math.floor(TDEFS[tw.type].cost * 0.5); destroyTower(tw); }
+function syncTowers(){ for (const tw of towers) if (tw.ring) tw.ring.visible = (TD.selected === tw); }
+function togglePlacing(type){ TD.placing = TD.placing === type ? null : type; }
+
+/* ---- pointer: pads first (build / select), rifle only on a clean miss ---- */
+const padRay = new THREE.Raycaster(), padNdc = new THREE.Vector2();
+function handlePadTap(e){
+  if (TD.placing){
+    padNdc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    padRay.setFromCamera(padNdc, camera);
+    const hits = padRay.intersectObjects(padHitMeshes, false);
+    if (hits.length){
+      const idx = hits[0].object.userData.pad, pad = PADS[idx];
+      if (!pad.tower){ if (buildTower(TD.placing, idx, true) && !(keys.ShiftLeft || keys.ShiftRight)) TD.placing = null; }
+      else { TD.selected = pad.tower; TD.placing = null; }
+      syncTowers();
+    }
+    return true;   /* placing mode swallows the click — never a rifle shot */
+  }
+  padNdc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  padRay.setFromCamera(padNdc, camera);
+  const hits = padRay.intersectObjects(padHitMeshes, false);
+  if (hits.length && PADS[hits[0].object.userData.pad].tower){
+    TD.selected = PADS[hits[0].object.userData.pad].tower; syncTowers(); return true;
+  }
+  return false;
+}
+
+/* ---- run flow ---- */
+function showBannerSticky(main, sub){ bannerMain.textContent = main; bannerSub.textContent = sub || ''; bannerEl.style.opacity = '1'; bannerT = 1e9; }
+function startNextWave(){ if (G.phase !== 'build') return; startWave(G.wave + 1); }
+function waveCleared(){
+  const bonus = 10 + 2 * G.wave; TD.salvage += bonus;
+  if (G.wave >= 10 && !TD.endless){ TD.victory = true; G.phase = 'victory';
+    showBannerSticky('VICTORY', 'the corner holds — ten waves repelled'); }
+  else { G.phase = 'build'; TD.buildT = BUILD_TIME;
+    showBanner('WAVE ' + G.wave + ' CLEARED', '+' + bonus + ' salvage — build phase'); }
+}
+function onDefeat(){ if (TD.defeat) return; TD.defeat = true; G.phase = 'defeat';
+  showBannerSticky('THE GATE HAS FALLEN', 'Yonge is open — the run is lost'); }
+function continueEndless(){ if (G.phase !== 'victory') return; TD.endless = true; G.phase = 'build'; TD.buildT = 15;
+  showBanner('ENDLESS', 'hold the gate as long as you can'); }
+function resetRun(){
+  for (let i = towers.length - 1; i >= 0; i--) destroyTower(towers[i]);
+  for (let i = zombies.length - 1; i >= 0; i--) removeZombie(i);
+  TD.salvage = 130; TD.gateHP = TD.gateMax; TD.buildT = BUILD_TIME;
+  TD.placing = null; TD.selected = null; TD.victory = false; TD.defeat = false; TD.endless = false;
+  G.wave = 0; G.kills = 0; G.hp = 100; G.mag = 12; G.reloading = false; G.phase = 'build';
+  showBanner('HOLD THE GATE', 'build your defence — wave 1 inbound');
+}
+
+/* ---- per-frame tower work (called from stepGame, before the horde moves) ---- */
+function stepToward(z, tx, tz, spd, dt){
+  const dx = tx - z.root.position.x, dz = tz - z.root.position.z;
+  const d = Math.hypot(dx, dz);
+  if (d < 0.35) return true;
+  const step = Math.min(d, spd * dt);
+  z.root.position.x += dx / d * step; z.root.position.z += dz / d * step;
+  z.root.rotation.y = Math.atan2(dx, dz);
+  return d - step < 0.35;
+}
+function stepTowers(dt){
+  const pulse = 0.5 + 0.3 * Math.sin(G.time * 3.2);
+  for (let i = 0; i < PADS.length; i++){
+    const pad = PADS[i];
+    pad.ringMat.emissiveIntensity = TD.placing ? (pad.tower ? 0.05 : pulse)
+      : (TD.selected && TD.selected.pad === i ? 0.85 : 0.15);
+  }
+  markerMat.opacity = 0.34 + 0.18 * Math.sin(G.time * 2.2);
+  for (const tw of towers){
+    if (tw.scaleT < 1){
+      tw.scaleT = Math.min(1, tw.scaleT + dt / 0.35);
+      const e2 = 1 - Math.pow(1 - tw.scaleT, 3);
+      tw.group.scale.setScalar(Math.max(0.01, e2));
+    }
+    if (tw.type === 'siren'){
+      for (const z of zombies){
+        if (z.state !== 'alive') continue;
+        if (Math.hypot(z.root.position.x - tw.x, z.root.position.z - tw.z) < TDEFS.siren.range) z.slowT = 0.15;
+      }
+      if (tw.aura) tw.aura.material.opacity = 0.07 + 0.03 * Math.sin(G.time * 2.4 + tw.pad);
+    } else if (tw.type === 'marksman'){
+      tw.cd -= dt;
+      if (tw.cd <= 0){
+        let best = null, bestKey = 1e9;
+        for (const z of zombies){
+          if (z.state !== 'alive') continue;
+          const dT = Math.hypot(z.root.position.x - tw.x, z.root.position.z - tw.z);
+          if (dT > TDEFS.marksman.range) continue;
+          /* most-progressed first (closest to the gate), tanks before all — game.html's targeting lessons */
+          const dG = Math.hypot(z.root.position.x, z.root.position.z - (GATE_Z - 2.1));
+          const key = (z.type === 'tank' ? 0 : 1000) + dG;
+          if (key < bestKey){ bestKey = key; best = z; }
+        }
+        if (best){
+          tw.cd = TDEFS.marksman.rate;
+          fireTracer(tw.x, 3.45, tw.z, best.root.position.x, best.h * 0.6, best.root.position.z);
+          _td.subVectors(best.root.position, tw.group.position); _td.y = 0;
+          if (_td.lengthSq() > 0.001) _td.normalize();
+          damageZombie(best, TDEFS.marksman.dmg, _td);
+        } else tw.cd = 0.15;
+      }
+    }
+  }
+  for (const z of zombies) if (z.slowT > 0) z.slowT -= dt;
+  for (const tr of tracerPool){
+    if (tr.t > 0){ tr.t -= dt; tr.line.material.opacity = Math.max(0, tr.t / 0.07) * 0.8;
+      if (tr.t <= 0) tr.line.visible = false; }
+  }
+}
+
+/* ---- build bar wiring ---- */
+el('tc-barricade').onclick = () => togglePlacing('barricade');
+el('tc-marksman').onclick = () => togglePlacing('marksman');
+el('tc-siren').onclick = () => togglePlacing('siren');
+el('btnRepair').onclick = () => {
+  const heal = Math.min(50, TD.gateMax - TD.gateHP, TD.salvage * 2);
+  if (heal >= 2){ TD.gateHP += heal; TD.salvage -= Math.ceil(heal / 2); }
+};
+el('btnSell').onclick = () => { if (TD.selected) sellTower(TD.selected); };
+el('btnStart').onclick = () => { if (G.phase === 'build') startNextWave(); else if (G.phase === 'defeat') resetRun(); };
+el('btnContinue').onclick = () => continueEndless();
+
 /* Factory-law hooks */
 window.__game = {
   state(){ return { wave: G.wave, hp: Math.round(G.hp), ammo: G.mag, kills: G.kills, alive: aliveCount(),
     survivorPos: [+SURV.pos.x.toFixed(1), +SURV.pos.z.toFixed(1)], phase: G.phase,
-    ready: !!(SURV.root && zTemplate), deaths: G.deaths }; },
+    ready: !!(SURV.root && zTemplate), deaths: G.deaths,
+    salvage: TD.salvage, gateHP: Math.ceil(TD.gateHP), gateMax: TD.gateMax,
+    towers: towers.map(t => ({ type: t.type, pad: t.pad, hp: Math.ceil(t.hp) })),
+    victory: TD.victory, defeat: TD.defeat, endless: TD.endless, placing: TD.placing,
+    atGate: zombies.reduce((n, z) => n + (z.chewing && z.state === 'alive' ? 1 : 0), 0),
+    queued: G.queue.length }; },
   spawnWave(n){ startWave(Math.max(1, n | 0)); },
   hurt(x){ damageSurvivor(x || 10); },
   giveAmmo(){ G.mag = 12; G.reloading = false; },
@@ -821,7 +1215,14 @@ window.__game = {
   step(frames, dt){ const d = dt || 1 / 30; for (let i = 0; i < (frames | 0); i++) stepGame(d); },
   nearest(){ let best = -1; for (const z of zombies){ if (z.state !== 'alive') continue;
     const d = Math.hypot(z.root.position.x - SURV.pos.x, z.root.position.z - SURV.pos.z);
-    if (best < 0 || d < best) best = d; } return +best.toFixed(1); }
+    if (best < 0 || d < best) best = d; } return +best.toFixed(1); },
+  /* phase A — tower-defence hooks */
+  placeTower(type, padIndex){ return buildTower(type, padIndex | 0, true); },
+  setGate(hp){ TD.gateHP = Math.max(0, Math.min(TD.gateMax, hp)); },
+  setSalvage(n){ TD.salvage = Math.max(0, n | 0); },
+  startNextWave(){ startNextWave(); },
+  warp(x, z){ SURV.pos.set(+x || 0, 0, +z || 0); },
+  reset(){ resetRun(); }
 };
 
 /* ---------- post: the pencil ---------- */

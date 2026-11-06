@@ -150,6 +150,8 @@ fetch('city-buildings.json').then(r => r.json()).then(list => {
     if (Math.abs(cx) > 2000 || Math.abs(cy) > 2000) return;
     if (Math.hypot(cx, cy) < 120 && ((Math.abs(cx) < 16 && Math.abs(cy) < 75) || (Math.abs(cy) < 16 && Math.abs(cx) < 75))) return;
     if (Math.hypot(cx + 420, cy + 1360) < 115) return;   // Rogers Centre dome is authored
+    if (cx > -100 && cx < -11 && cy < -8 && cy > -310) return;   // Eaton Centre: hero-modeled (vista)
+    if (cx > 12 && cx < 130 && cy < -8 && cy > -100) return;     // Dundas Sq + 10 Dundas E: hero-modeled
     const shape = new THREE.Shape();
     b.pts.forEach((p, i) => { if (i === 0) shape.moveTo(p[0], p[1]); else shape.lineTo(p[0], p[1]); });
     const geo = new THREE.ExtrudeGeometry(shape, { depth: Math.max(6, b.h), bevelEnabled:false });
@@ -303,7 +305,7 @@ function shopBand(w, x, z, ry){
     new THREE.MeshStandardMaterial({ map:t, roughness:.85 }));
   m.position.set(x, 1.8, z); m.rotation.y = ry; m.castShadow = true; scene.add(m);
 }
-shopBand(24, -8, -13.6, 0); shopBand(24, 14, -13.6, 0); shopBand(24, -4, 13.6, Math.PI);
+shopBand(24, -8, -13.6, 0); shopBand(24, 14, -13.6, 0);
 shopBand(20, 13.6, -2, -Math.PI/2); shopBand(20, -13.6, 5, Math.PI/2);
 
 /* ---------- signs: graphite on paper boards ---------- */
@@ -321,12 +323,99 @@ function sign(text, w, x, y, z, ry, vertical=false){
     new THREE.MeshStandardMaterial({ map:t, side:THREE.DoubleSide, roughness:.9 }));
   m.position.set(x, y, z); m.rotation.y = ry; scene.add(m);
 }
-sign('EATON', 11, 15.5, 8.5, -13.5, -Math.PI/2);
-sign('YONGE', 3.2, 13.2, 9.5, 12.5, Math.PI, true);
-sign('DUNDAS SQ', 10, -14.0, 7.5, -12.0, Math.PI/2);
-sign('RAMEN', 2.6, -12.6, 6.5, 11.0, 0, true);
+sign('YONGE', 3.2, 13.4, 9.5, -12.8, Math.PI, true);
+sign('RAMEN', 2.6, -12.6, 6.5, -11.0, 0, true);
 sign('PHARMACY', 7, -14.5, 5.0, 14.5, Math.PI/2);
 sign('CINEMA', 8, 16.0, 10.5, 16.0, -Math.PI/2);
+
+
+/* ---------- VISTA: the real corner, modeled true, then painted ----------
+   SW = Toronto Eaton Centre (Yonge facade + the galleria vault).
+   SE = Yonge-Dundas Square + 10 Dundas East (media mass). No name slabs. */
+function vistaTex(w, h, painter){
+  const [c, g] = cnv(w, h); painter(g, w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+(function vista(){
+  const R = Math.random;
+  // Eaton Centre — Yonge Street face: stone panels over lit storefronts
+  const yongeTex = vistaTex(1024, 256, (g, w, h) => {
+    g.fillStyle = '#8a7a64'; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 64){ g.fillStyle = 'rgba(30,24,18,0.5)'; g.fillRect(x, 0, 3, h); }
+    for (const y0 of [26, 78]){                                   // window bands
+      g.fillStyle = '#2c3436'; g.fillRect(0, y0, w, 34);
+      for (let x = 8; x < w; x += 30){ g.fillStyle = R() > .45 ? 'rgba(255,176,102,0.75)' : 'rgba(140,170,175,0.5)'; g.fillRect(x, y0 + 5, 20, 24); }
+    }
+    g.fillStyle = '#22282a'; g.fillRect(0, 168, w, 88);            // storefront glass
+    for (let x = 6; x < w; x += 46){
+      g.fillStyle = R() > .3 ? 'rgba(255,166,88,0.85)' : 'rgba(90,120,125,0.8)';
+      g.fillRect(x, 176, 38, 72);
+      g.fillStyle = 'rgba(15,12,10,0.65)'; g.fillRect(x, 176, 3, 72);
+    }
+    for (let i = 0; i < 2600; i++){ g.fillStyle = `rgba(20,16,12,${R()*0.08})`; g.fillRect(R()*w, R()*h, 2, 2); }
+  });
+  const glassTex = vistaTex(512, 256, (g, w, h) => {
+    g.fillStyle = '#26333a'; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 42) for (let y = 0; y < h; y += 42){
+      g.fillStyle = R() > .35 ? 'rgba(255,170,95,0.55)' : 'rgba(110,150,155,0.4)';
+      g.fillRect(x + 3, y + 3, 36, 36);
+    }
+    g.strokeStyle = 'rgba(12,12,12,0.8)'; g.lineWidth = 3;
+    for (let x = 0; x <= w; x += 42){ g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+  });
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x6a5c4c, roughness: .95 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x4c463f, roughness: 1 });
+  const eatonFace = new THREE.MeshStandardMaterial({ map: yongeTex, roughness: .85, emissive: 0xffffff, emissiveMap: yongeTex, emissiveIntensity: .38 });
+  const eaton = new THREE.Mesh(new THREE.BoxGeometry(38, 17, 288),
+    [eatonFace, panelMat, roofMat, roofMat, panelMat, eatonFace]);
+  eaton.position.set(-33, 8.5, 156); eaton.castShadow = true; authored.add(eaton);
+  const pavilion = new THREE.Mesh(new THREE.BoxGeometry(30, 11, 16),
+    new THREE.MeshStandardMaterial({ map: glassTex, roughness: .4, emissive: 0xffffff, emissiveMap: glassTex, emissiveIntensity: .45 }));
+  pavilion.position.set(-29, 5.5, 21); authored.add(pavilion);
+  // the galleria vault — the signature silhouette
+  const vaultShape = new THREE.Shape();
+  vaultShape.absarc(0, 0, 12.5, 0, Math.PI, false); vaultShape.lineTo(-12.5, 0);
+  const vaultGeo = new THREE.ExtrudeGeometry(vaultShape, { depth: 236, bevelEnabled: false, curveSegments: 20 });
+  const vault = new THREE.Mesh(vaultGeo, new THREE.MeshStandardMaterial({
+    color: 0x5d8288, roughness: .18, metalness: .08, emissive: 0x2e2013, emissiveIntensity: .55 }));
+  vault.position.set(-68, 15, 38); authored.add(vault);
+  const ribMat = new THREE.MeshStandardMaterial({ color: 0xb9bcba, roughness: .5, metalness: .35 });
+  for (let k = 0; k < 9; k++){
+    const rib = new THREE.Mesh(new THREE.TorusGeometry(12.8, 0.22, 6, 24, Math.PI), ribMat);
+    rib.position.set(-68, 15, 52 + k * 26); authored.add(rib);
+  }
+  const mallBack = new THREE.Mesh(new THREE.BoxGeometry(30, 13, 240), panelMat);
+  mallBack.position.set(-93, 6.5, 156); authored.add(mallBack);
+  // Dundas Square — open plaza, media pillar on the corner itself
+  const plazaTex = vistaTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#8d8578'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(40,36,30,0.5)'; g.lineWidth = 3;
+    for (let i = 0; i <= 8; i++){ g.beginPath(); g.moveTo(i * 64, 0); g.lineTo(i * 64, h); g.stroke(); g.beginPath(); g.moveTo(0, i * 64); g.lineTo(w, i * 64); g.stroke(); }
+    for (let i = 0; i < 1500; i++){ g.fillStyle = `rgba(30,26,20,${R()*0.1})`; g.fillRect(R()*w, R()*h, 2, 2); }
+  });
+  const plaza = new THREE.Mesh(new THREE.BoxGeometry(92, 0.5, 68),
+    new THREE.MeshStandardMaterial({ map: plazaTex, roughness: 1 }));
+  plaza.position.set(60, 0.28, 44); authored.add(plaza);
+  const screenTex = (cols) => vistaTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#191919'; g.fillRect(0, 0, w, h);
+    cols.forEach((col, i) => { g.fillStyle = col; g.fillRect((i % 2) * 256, Math.floor(i / 2) * 256, 256, 256); });
+    g.fillStyle = 'rgba(245,240,230,0.9)'; g.beginPath(); g.arc(370, 130, 62, 0, 7); g.fill();
+    g.fillStyle = 'rgba(20,18,16,0.85)'; g.fillRect(40, 330, 330, 44);
+    for (let i = 0; i < 2000; i++){ g.fillStyle = `rgba(0,0,0,${R()*0.12})`; g.fillRect(R()*w, R()*h, 2, 2); }
+  });
+  const screenMat = (cols) => { const t = screenTex(cols);
+    return new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: .5, roughness: .6 }); };
+  const pillar = new THREE.Mesh(new THREE.BoxGeometry(5, 26, 5), screenMat(['#a62b1f', '#d97b2f', '#20555e', '#e3d7bd']));
+  pillar.position.set(17, 13, 14); authored.add(pillar);
+  // 10 Dundas East — the media mass behind the square
+  const ten = new THREE.Mesh(new THREE.BoxGeometry(96, 34, 52),
+    [facadeVariants[7], facadeVariants[7], roofMat, roofMat, facadeVariants[7],
+     screenMat(['#20555e', '#a62b1f', '#e3d7bd', '#d97b2f'])]);
+  ten.position.set(64, 17, 106); ten.castShadow = true; authored.add(ten);
+  const tenTower = new THREE.Mesh(new THREE.BoxGeometry(10, 46, 10), screenMat(['#d97b2f', '#20555e', '#a62b1f', '#e3d7bd']));
+  tenTower.position.set(24, 23, 86); authored.add(tenTower);
+})();
 
 /* ---------- dressing props ---------- */
 const loader = new GLTFLoader();
@@ -502,6 +591,7 @@ addEventListener('resize', () => {
 window.__noir = {
   setView,
   snap(){ eagleT = view === 'eagle' ? 1 : 0; },
+  setYaw(v){ yaw = v; },
   eagleT(){ return eagleT; },
   shot(){ composer.render(); return renderer.domElement.toDataURL('image/png'); },
   state(){ return { view, camPos: camera.position.toArray().map(v => +v.toFixed(1)), children: scene.children.length, tiles: window.__tiles || 0,

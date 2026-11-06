@@ -1,0 +1,19 @@
+; Toronto TD — Godot rebuild (factory engine: Godot 4.4.1)
+; Scaffold prepared by Eve for the Codex-Astra build. See HANDOFF-CODEX.md
+; in the GitHub repo (codebase/HANDOFF-CODEX.md) for the full ticket.
+
+config_version=5
+
+[application]
+
+config/name="Toronto TD"
+config/features=PackedStringArray("4.4", "Forward Plus")
+
+[physics]
+
+3d/physics_engine="JoltPhysics3D"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+environment/defaults/default_clear_color=Color(0.49, 0.52, 0.54, 1)
